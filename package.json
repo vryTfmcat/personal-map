@@ -1,0 +1,28 @@
+{
+  "name": "personal-map",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Markdown-first personal map for Obsidian, powered by AMap JS API 2.0.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vryTfmcat/personal-map.git"
+  },
+  "homepage": "https://github.com/vryTfmcat/personal-map",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "test": "node --experimental-strip-types --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.7.2"
+  }
+}
