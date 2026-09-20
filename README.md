@@ -1,5 +1,7 @@
 # Personal Map / 个人地图
 
+Current release / 当前版本：`0.3.6`
+
 Personal Map is an independent Obsidian plugin for storing personal places as Markdown files and viewing them on AMap (Gaode Map). It is designed for users in China. The plugin supports AMap place search, nearby POIs, reverse geocoding, and navigation links while keeping place notes and personal experience in the user's vault.
 
 The plugin loads the official AMap JavaScript API at runtime only after the user configures their own AMap Web JS API key. It does not collect telemetry, show advertisements, or upload vault notes to any third party.
@@ -74,3 +76,12 @@ showHomeMarker: true
 ## 独立性
 
 本插件不读取、导入或依赖其他插件的设置、私有数据与源码。跨插件关联只通过公开 Markdown 属性或 Obsidian 双链完成。
+
+## 验证
+
+```bash
+npm test
+npm run build
+```
+
+当前自动测试 `10/10` 通过；已在 Obsidian 中验证高德搜索、选点、地点写入、券自动关联、重启恢复与桌面列表布局。
