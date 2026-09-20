@@ -16,6 +16,9 @@ The plugin loads the official AMap JavaScript API at runtime only after the user
 - 类型、标签、正文关键词筛选。
 - 从标点跳转高德地图。
 - 密钥缺失或离线时仍可打开地点笔记。
+- 从当前权益 Markdown 按需搜索、创建或复用地点，并回写稳定 ID 与双链。
+- 可选择单篇券 Markdown 或券文件夹，逐张确认高德门店并创建或复用地点。
+- 地点详情显示通过公开 Markdown 关系关联的有效券。
 
 ## 安装与构建
 
@@ -64,6 +67,10 @@ showHomeMarker: true
 
 `longitude` 与 `latitude` 使用高德 `GCJ-02` 坐标系。`placeType` 保持实体层规范值，地图上的自由类型写入 `mapType`。家庭笔记初始只保存地址，经纬度在首次打开地图并确认位置后写入。
 
+地图工具栏中的“从券添加地点”可以选择一篇券 Markdown，或选择包含多张券的文件夹建立处理队列。插件先用 `usablePlaceIds` 检查是否已经关联；已有唯一关系时直接打开该地点。尚未关联时使用券的 `merchantName` 查找地点：若库中只有一个名称完全一致的地点，会立即自动关联；否则显示高德 POI，点击结果后立即创建地点并自动关联，不再要求第二次保存确认。点击已有标点也会立即关联。关联会向券笔记写入 `usablePlaceIds` 与 `usableAt`，不需要再次执行命令。券 Markdown 本身不会被当作地图点或地点数据源。
+
+也可以打开一篇带 `couponSchedulerItem: true`、`entityType: benefit` 的权益笔记，执行命令“个人地图：将当前券关联到地图地点”。地点主档不反向保存券列表。
+
 ## 独立性
 
-本插件不读取、导入或依赖其他项目、待办或地图插件的数据与源码。未来的跨插件关联只通过公开 Markdown 属性或 Obsidian 双链完成。
+本插件不读取、导入或依赖其他插件的设置、私有数据与源码。跨插件关联只通过公开 Markdown 属性或 Obsidian 双链完成。

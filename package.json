@@ -1,6 +1,6 @@
 {
   "name": "personal-map",
-  "version": "0.1.0",
+  "version": "0.3.6",
   "private": true,
   "type": "module",
   "description": "A Markdown-first personal map for Obsidian, powered by AMap JS API 2.0.",

@@ -48,6 +48,47 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
+.personal-map-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.personal-map-source-chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: min(100%, 420px);
+  padding: 2px 7px;
+  color: var(--text-normal);
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+}
+
+.personal-map-source-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-map-source-chip button {
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+}
+
+.personal-map-source-chip.is-primary { color: var(--text-muted); }
+
 .personal-map-workspace {
   display: grid;
   grid-template-columns: var(--personal-map-panel-width) minmax(320px, 1fr) var(--personal-map-panel-width);
@@ -92,17 +133,38 @@
 .personal-map-result {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   width: 100%;
+  height: auto;
+  min-height: 58px;
   margin: 0 0 8px;
   padding: 10px;
+  overflow: hidden;
+  line-height: 1.35;
   text-align: left;
   white-space: normal;
+}
+
+.personal-map-result strong,
+.personal-map-result span,
+.personal-map-result small {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.personal-map-result strong {
+  display: block;
+  line-height: 1.35;
 }
 
 .personal-map-result span,
 .personal-map-result small {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
+  line-height: 1.35;
   color: var(--text-muted);
   font-size: var(--font-smallest);
 }
@@ -169,6 +231,45 @@
 
 .personal-map-tags {
   color: var(--text-accent);
+  font-size: var(--font-smallest);
+}
+
+.personal-map-link-context,
+.personal-map-link-box {
+  padding: 10px;
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-m);
+}
+
+.personal-map-link-box p {
+  margin: 6px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+
+.personal-map-link-box button + button { margin-left: 8px; }
+
+.personal-map-linked-benefits {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.personal-map-benefit-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 9px;
+  text-align: left;
+  white-space: normal;
+}
+
+.personal-map-benefit-row span {
+  margin-top: 4px;
+  color: var(--text-muted);
   font-size: var(--font-smallest);
 }
 

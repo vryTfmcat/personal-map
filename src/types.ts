@@ -61,6 +61,24 @@ export interface RecentStyle {
   markerColor: string;
 }
 
+export interface BenefitLinkSource {
+  file: TFile;
+  benefitId: string;
+  title: string;
+  merchantName: string;
+  usablePlaceIds: string[];
+  usableAt: string[];
+}
+
+export interface LinkedBenefit {
+  file: TFile;
+  benefitId: string;
+  title: string;
+  merchantName: string;
+  validTo: string;
+  purchasePrice: number | null;
+}
+
 export interface PersonalMapPluginApi {
   getCredentials(): AMapCredentials;
   setCredentials(credentials: AMapCredentials): void;
@@ -69,6 +87,7 @@ export interface PersonalMapPluginApi {
 
 declare global {
   interface Window {
+    AMap?: any;
     _AMapSecurityConfig?: {
       securityJsCode?: string;
     };

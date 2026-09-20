@@ -1,9 +1,9 @@
 {
   "id": "personal-map",
   "name": "Personal Map",
-  "version": "0.1.0",
+  "version": "0.3.6",
   "minAppVersion": "1.6.0",
-  "description": "Manage Markdown places in China with AMap.",
+  "description": "Manage Markdown places and link benefit notes to confirmed AMap POIs.",
   "author": "vryTfmcat",
   "authorUrl": "https://github.com/vryTfmcat",
   "isDesktopOnly": false

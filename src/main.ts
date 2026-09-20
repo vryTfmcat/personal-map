@@ -7,10 +7,12 @@ import {
   WorkspaceLeaf,
 } from "obsidian";
 import { PersonalMapView, VIEW_TYPE_PERSONAL_MAP } from "./view";
+import { PersonalMapStore } from "./store";
 import type { AMapCredentials, PersonalMapPluginApi } from "./types";
 
 export default class PersonalMapPlugin extends Plugin implements PersonalMapPluginApi {
   async onload(): Promise<void> {
+    const store = new PersonalMapStore(this.app);
     this.registerView(VIEW_TYPE_PERSONAL_MAP, (leaf) => new PersonalMapView(leaf, this));
     this.addRibbonIcon("map-pinned", "打开个人地图", () => void this.activateView());
     this.addCommand({
@@ -18,14 +20,32 @@ export default class PersonalMapPlugin extends Plugin implements PersonalMapPlug
       name: "打开个人地图",
       callback: () => void this.activateView(),
     });
+    this.addCommand({
+      id: "link-current-benefit-to-place",
+      name: "将当前券关联到地图地点",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !store.getBenefitLinkSource(file)) return false;
+        if (!checking) void this.activateView(file);
+        return true;
+      },
+    });
     this.addSettingTab(new PersonalMapSettingTab(this.app, this));
 
+    let refreshTimer: number | null = null;
     const refresh = () => {
-      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSONAL_MAP)) {
-        const view = leaf.view;
-        if (view instanceof PersonalMapView) void view.refreshData();
-      }
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSONAL_MAP)) {
+          const view = leaf.view;
+          if (view instanceof PersonalMapView) void view.refreshData();
+        }
+      }, 150);
     };
+    this.register(() => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+    });
     this.registerEvent(this.app.vault.on("create", refresh));
     this.registerEvent(this.app.vault.on("modify", refresh));
     this.registerEvent(this.app.vault.on("delete", refresh));
@@ -52,13 +72,16 @@ export default class PersonalMapPlugin extends Plugin implements PersonalMapPlug
     window.localStorage.setItem(this.secretKey("securityCode"), credentials.securityCode.trim());
   }
 
-  async activateView(): Promise<void> {
+  async activateView(benefitFile?: import("obsidian").TFile): Promise<void> {
     let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSONAL_MAP)[0];
     if (!leaf) {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE_PERSONAL_MAP, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);
+    if (benefitFile && leaf.view instanceof PersonalMapView) {
+      await leaf.view.startLinkingBenefit(benefitFile);
+    }
   }
 }
 

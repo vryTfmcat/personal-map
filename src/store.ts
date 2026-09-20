@@ -4,8 +4,11 @@ import {
   distanceMeters,
   extractExcerpt,
   formatLocalDate,
+  formatLocalDateTime,
   hasCoordinates,
   isFiniteCoordinate,
+  buildPlaceRelation,
+  normalizeStringList,
   normalizeTags,
   normalizeText,
   safeFileStem,
@@ -13,6 +16,8 @@ import {
 import {
   DEFAULT_CONFIG_PATH,
   DEFAULT_PLACES_FOLDER,
+  type BenefitLinkSource,
+  type LinkedBenefit,
   type MapConfig,
   type PlaceDraft,
   type PlaceRecord,
@@ -121,9 +126,69 @@ export class PersonalMapStore {
     };
   }
 
+  getBenefitLinkSource(file: TFile): BenefitLinkSource | null {
+    const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") return null;
+    return {
+      file,
+      benefitId: frontmatterString(frontmatter.benefitId),
+      title: frontmatterString(frontmatter.title, file.basename),
+      merchantName: frontmatterString(frontmatter.merchantName),
+      usablePlaceIds: normalizeStringList(frontmatter.usablePlaceIds),
+      usableAt: normalizeStringList(frontmatter.usableAt),
+    };
+  }
+
+  async linkBenefitToPlace(source: BenefitLinkSource, place: PlaceRecord): Promise<boolean> {
+    let changed = false;
+    const linkTarget = place.file.path.replace(/\.md$/i, "");
+    const placeRef = `[[${linkTarget}|${place.title}]]`;
+    await this.app.fileManager.processFrontMatter(source.file, (frontmatter) => {
+      const relation = buildPlaceRelation(frontmatter.usablePlaceIds, frontmatter.usableAt, place.placeId, placeRef);
+      changed = relation.changed;
+      frontmatter.usablePlaceIds = relation.placeIds;
+      frontmatter.usableAt = relation.placeRefs;
+      if (changed) frontmatter.updated = formatLocalDateTime();
+    });
+    return changed;
+  }
+
+  loadActiveBenefitsForPlace(place: PlaceRecord): LinkedBenefit[] {
+    const results: LinkedBenefit[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") continue;
+      if (frontmatterString(frontmatter.benefitStatus) !== "active") continue;
+      const ids = normalizeStringList(frontmatter.usablePlaceIds);
+      const refs = normalizeStringList(frontmatter.usableAt);
+      const linkedById = Boolean(place.placeId && ids.includes(place.placeId));
+      const linkedByRef = refs.some((ref) => {
+        const target = ref.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
+        if (!target) return false;
+        return this.app.metadataCache.getFirstLinkpathDest(target, file.path)?.path === place.file.path;
+      });
+      if (!linkedById && !linkedByRef) continue;
+      results.push({
+        file,
+        benefitId: frontmatterString(frontmatter.benefitId),
+        title: frontmatterString(frontmatter.title, file.basename),
+        merchantName: frontmatterString(frontmatter.merchantName),
+        validTo: frontmatterString(frontmatter.validTo),
+        purchasePrice: frontmatterNumber(frontmatter.purchasePrice),
+      });
+    }
+    return results.sort((left, right) => left.validTo.localeCompare(right.validTo) || left.title.localeCompare(right.title, "zh-CN"));
+  }
+
+  async openFile(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(false).openFile(file);
+  }
+
   async loadPlaces(config: MapConfig): Promise<PlaceRecord[]> {
-    const prefix = `${normalizePath(config.placesFolder)}/`;
-    const files = this.app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(prefix));
+    const placesFolder = normalizePath(config.placesFolder);
+    const files = this.app.vault.getMarkdownFiles().filter((file) =>
+      file.path.startsWith(`${placesFolder}/`),
+    );
     const centerTarget = config.centerPlace.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
     if (centerTarget) {
       const centerFile = this.app.metadataCache.getFirstLinkpathDest(centerTarget, DEFAULT_CONFIG_PATH);
