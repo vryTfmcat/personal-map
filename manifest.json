@@ -1,9 +1,9 @@
 {
   "id": "personal-map",
   "name": "个人地图",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "minAppVersion": "1.6.0",
-  "description": "Manage Markdown places in China with AMap and link public benefit notes.",
+  "description": "使用高德地图展示和搜索由 Markdown 保存的个人地点。",
   "author": "vryTfmcat",
   "authorUrl": "https://github.com/vryTfmcat",
   "isDesktopOnly": false

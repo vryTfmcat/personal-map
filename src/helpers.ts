@@ -80,34 +80,6 @@ export function normalizeTags(value: unknown): string[] {
   return [];
 }
 
-export function normalizeStringList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  if (typeof value === "string" && value.trim()) return [value.trim()];
-  return [];
-}
-
-export function appendUnique(values: string[], value: string): string[] {
-  const normalized = value.trim();
-  return [...new Set([...values.map((item) => item.trim()).filter(Boolean), normalized].filter(Boolean))];
-}
-
-export function buildPlaceRelation(
-  currentIds: unknown,
-  currentRefs: unknown,
-  placeId: string,
-  placeRef: string,
-): { placeIds: string[]; placeRefs: string[]; changed: boolean } {
-  const ids = normalizeStringList(currentIds);
-  const refs = normalizeStringList(currentRefs);
-  const placeIds = appendUnique(ids, placeId);
-  const placeRefs = appendUnique(refs, placeRef);
-  return {
-    placeIds,
-    placeRefs,
-    changed: placeIds.length !== ids.length || placeRefs.length !== refs.length,
-  };
-}
-
 export function parseMarkerIcon(value: string): { kind: "lucide" | "emoji"; value: string } {
   const normalized = value.trim();
   if (normalized.startsWith("emoji:") && normalized.slice(6).trim()) {
@@ -148,15 +120,4 @@ export function formatLocalDate(date = new Date()): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-export function formatLocalDateTime(date = new Date()): string {
-  const offsetMinutes = -date.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, "0");
-  const offsetRemainder = String(Math.abs(offsetMinutes) % 60).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  return `${formatLocalDate(date)}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainder}`;
 }
