@@ -1,6 +1,6 @@
 {
   "id": "personal-map",
-  "name": "个人地图",
+  "name": "Personal Map",
   "version": "0.1.0",
   "minAppVersion": "1.6.0",
   "description": "Manage Markdown places in China with AMap.",
