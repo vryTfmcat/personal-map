@@ -10,6 +10,7 @@ import {
 import { boundsAround, hasCoordinates, parseMarkerIcon, zoomForRadius } from "./helpers";
 import { PersonalMapStore } from "./store";
 import type {
+  BenefitLinkSource,
   MapConfig,
   PersonalMapPluginApi,
   PlaceDraft,
@@ -25,6 +26,7 @@ const COMMON_ICONS = [
 ];
 
 const FALLBACK_CENTER: [number, number] = [114.0579, 22.5431];
+const AMAP_PLUGINS = ["AMap.PlaceSearch", "AMap.AutoComplete", "AMap.Geocoder", "AMap.Scale", "AMap.ToolBar"];
 
 function locationNumbers(location: any): { longitude: number; latitude: number } | null {
   if (!location) return null;
@@ -91,6 +93,7 @@ export class PersonalMapView extends ItemView {
   private pickMode: "create" | "relocate" | null = null;
   private relocatingPlace: PlaceRecord | null = null;
   private debounceTimer: number | null = null;
+  private pendingBenefit: BenefitLinkSource | null = null;
 
   private mapEl!: HTMLDivElement;
   private resultEl!: HTMLDivElement;
@@ -128,6 +131,21 @@ export class PersonalMapView extends ItemView {
     this.clearMapObjects();
     if (this.map) this.map.destroy();
     this.map = null;
+  }
+
+  async startLinkingBenefit(file: TFile): Promise<void> {
+    const source = this.store.getBenefitLinkSource(file);
+    if (!source) {
+      new Notice("个人地图：当前笔记不是可关联的券食权益");
+      return;
+    }
+    this.pendingBenefit = source;
+    if (!this.config) await this.refreshData();
+    const query = source.merchantName || source.title;
+    this.searchInput.value = query;
+    this.renderLinkingPrompt();
+    this.setStatus(`正在为“${source.title}”关联地点`);
+    if (this.placeSearch && query) await this.searchNearby(query);
   }
 
   private renderShell(): void {
@@ -204,11 +222,16 @@ export class PersonalMapView extends ItemView {
 
     try {
       window._AMapSecurityConfig = { securityJsCode: credentials.securityCode };
-      this.AMap = await AMapLoader.load({
-        key: credentials.key,
-        version: "2.0",
-        plugins: ["AMap.PlaceSearch", "AMap.AutoComplete", "AMap.Geocoder", "AMap.Scale", "AMap.ToolBar"],
-      });
+      if (window.AMap?.Map) {
+        this.AMap = window.AMap;
+        await new Promise<void>((resolve) => this.AMap.plugin(AMAP_PLUGINS, resolve));
+      } else {
+        this.AMap = await AMapLoader.load({
+          key: credentials.key,
+          version: "2.0",
+          plugins: AMAP_PLUGINS,
+        });
+      }
       const center = this.store.coordinatesReady(this.home)
         ? [this.home.longitude, this.home.latitude]
         : FALLBACK_CENTER;
@@ -388,7 +411,17 @@ export class PersonalMapView extends ItemView {
 
   private renderPlaceEditor(draft: PlaceDraft, existing?: PlaceRecord): void {
     this.detailEl.empty();
-    this.detailEl.createEl("h3", { text: existing ? "编辑地点" : "保存地点" });
+    this.detailEl.createEl("h3", {
+      text: this.pendingBenefit
+        ? existing ? "确认地点并关联券" : "创建地点并关联券"
+        : existing ? "编辑地点" : "保存地点",
+    });
+    if (this.pendingBenefit) {
+      this.detailEl.createEl("p", {
+        cls: "personal-map-link-context",
+        text: `待关联：${this.pendingBenefit.title}`,
+      });
+    }
     const form = this.detailEl.createDiv({ cls: "personal-map-editor" });
     const titleInput = this.field(form, "名称", draft.title);
     const addressInput = this.field(form, "地址", draft.address);
@@ -425,7 +458,12 @@ export class PersonalMapView extends ItemView {
     }
 
     const actions = form.createDiv({ cls: "personal-map-editor-actions" });
-    const save = actions.createEl("button", { text: existing ? "保存修改" : "创建地点笔记", cls: "mod-cta" });
+    const save = actions.createEl("button", {
+      text: this.pendingBenefit
+        ? existing ? "保存并关联" : "创建并关联"
+        : existing ? "保存修改" : "创建地点笔记",
+      cls: "mod-cta",
+    });
     save.addEventListener("click", () => void this.saveEditorDraft({
       ...draft,
       title: titleInput.value.trim(),
@@ -445,6 +483,10 @@ export class PersonalMapView extends ItemView {
       const open = actions.createEl("button", { text: "打开笔记" });
       open.addEventListener("click", () => void this.store.openPlace(existing));
     }
+    if (this.pendingBenefit) {
+      const cancel = actions.createEl("button", { text: "取消关联" });
+      cancel.addEventListener("click", () => this.cancelBenefitLink());
+    }
   }
 
   private field(container: HTMLElement, label: string, value: string, placeholder = ""): HTMLInputElement {
@@ -461,7 +503,8 @@ export class PersonalMapView extends ItemView {
     }
     if (existing) {
       await this.store.updatePlace(existing, draft);
-      new Notice("个人地图：地点已更新，个人经验正文未改动");
+      if (this.pendingBenefit) await this.completeBenefitLink(existing);
+      else new Notice("个人地图：地点已更新，个人经验正文未改动");
       await this.refreshData();
       this.clearPreview();
       return;
@@ -478,6 +521,10 @@ export class PersonalMapView extends ItemView {
       ).open();
       const open = this.detailEl.createEl("button", { text: `打开已有地点：${duplicate.title}` });
       open.addEventListener("click", () => void this.store.openPlace(duplicate));
+      if (this.pendingBenefit) {
+        const link = this.detailEl.createEl("button", { text: `关联已有地点：${duplicate.title}`, cls: "mod-cta" });
+        link.addEventListener("click", () => void this.completeBenefitLink(duplicate));
+      }
       return;
     }
     await this.createDraft(draft);
@@ -486,7 +533,8 @@ export class PersonalMapView extends ItemView {
   private async createDraft(draft: PlaceDraft): Promise<void> {
     if (!this.config) return;
     const created = await this.store.createPlace(this.config, draft);
-    new Notice(`个人地图：已创建 ${created.title}`);
+    if (this.pendingBenefit) await this.completeBenefitLink(created);
+    else new Notice(`个人地图：已创建 ${created.title}`);
     await this.refreshData();
     this.clearPreview();
     this.showDetails(this.places.find((place) => place.file.path === created.file.path) ?? created);
@@ -596,6 +644,15 @@ export class PersonalMapView extends ItemView {
     text.createEl("h3", { text: place.title });
     if (place.placeType) text.createEl("small", { text: place.placeType });
     if (place.address) this.detailEl.createEl("p", { text: place.address });
+    if (this.pendingBenefit) {
+      const linkBox = this.detailEl.createDiv({ cls: "personal-map-link-box" });
+      linkBox.createEl("strong", { text: `关联“${this.pendingBenefit.title}”` });
+      linkBox.createEl("p", { text: "确认这是该券可用的实际门店后再关联。" });
+      const link = linkBox.createEl("button", { text: "关联到此地点", cls: "mod-cta" });
+      link.addEventListener("click", () => void this.completeBenefitLink(place));
+      const cancel = linkBox.createEl("button", { text: "取消" });
+      cancel.addEventListener("click", () => this.cancelBenefitLink());
+    }
     this.detailEl.createEl("h4", { text: "个人经验" });
     this.detailEl.createEl("p", { text: place.excerpt || "尚未记录，打开笔记后可以自由填写。" });
     if (place.tags.length) this.detailEl.createEl("p", { cls: "personal-map-tags", text: place.tags.map((tag) => `#${tag}`).join("  ") });
@@ -631,6 +688,72 @@ export class PersonalMapView extends ItemView {
           },
         ).open();
       });
+    }
+    const benefits = this.detailEl.createDiv({ cls: "personal-map-linked-benefits" });
+    void this.renderLinkedBenefits(place, benefits);
+  }
+
+  private renderLinkingPrompt(): void {
+    if (!this.pendingBenefit) return;
+    this.detailEl.empty();
+    this.detailEl.createEl("h3", { text: "关联券到地点" });
+    this.detailEl.createEl("p", { text: this.pendingBenefit.title });
+    if (this.pendingBenefit.merchantName) {
+      this.detailEl.createEl("p", { text: `商户：${this.pendingBenefit.merchantName}` });
+    }
+    this.detailEl.createEl("p", { text: "从高德搜索结果或已有地点中选择实际门店；不会按商户文字自动建点。" });
+    const cancel = this.detailEl.createEl("button", { text: "取消关联" });
+    cancel.addEventListener("click", () => this.cancelBenefitLink());
+  }
+
+  private cancelBenefitLink(): void {
+    this.pendingBenefit = null;
+    this.clearPreview();
+    this.renderOfflineList();
+    this.detailEl.empty();
+    this.setStatus(`${this.places.length} 个地点 · 已取消关联`);
+  }
+
+  private async completeBenefitLink(place: PlaceRecord): Promise<void> {
+    const source = this.pendingBenefit;
+    if (!source) return;
+    this.pendingBenefit = null;
+    try {
+      const changed = await this.store.linkBenefitToPlace(source, place);
+      new Notice(changed
+        ? `个人地图：已将“${source.title}”关联到 ${place.title}`
+        : `个人地图：这张券已经关联到 ${place.title}`);
+      await this.refreshData();
+      this.clearPreview();
+      const current = this.places.find((candidate) => candidate.placeId === place.placeId) ?? place;
+      this.showDetails(current);
+      this.setStatus(`已关联：${source.title} → ${place.title}`);
+    } catch (error) {
+      this.pendingBenefit = source;
+      console.error("个人地图：关联券到地点失败", error);
+      new Notice("个人地图：关联失败，券笔记未被改写");
+      this.renderLinkingPrompt();
+    }
+  }
+
+  private async renderLinkedBenefits(place: PlaceRecord, container: HTMLElement): Promise<void> {
+    const benefits = this.store.loadActiveBenefitsForPlace(place);
+    if (!container.isConnected) return;
+    container.empty();
+    container.createEl("h4", { text: `可用券（${benefits.length}）` });
+    if (!benefits.length) {
+      container.createEl("p", { text: "暂无关联的有效券。" });
+      return;
+    }
+    for (const benefit of benefits) {
+      const row = container.createEl("button", { cls: "personal-map-benefit-row" });
+      row.createEl("strong", { text: benefit.title });
+      const details = [
+        benefit.validTo ? `有效期至 ${benefit.validTo}` : "未填写到期日",
+        benefit.purchasePrice !== null ? `¥${benefit.purchasePrice.toFixed(2)}` : "",
+      ].filter(Boolean).join(" · ");
+      row.createEl("span", { text: details });
+      row.addEventListener("click", () => void this.store.openFile(benefit.file));
     }
   }
 

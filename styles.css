@@ -172,6 +172,47 @@
   font-size: var(--font-smallest);
 }
 
+.personal-map-link-context,
+.personal-map-link-box {
+  padding: 10px;
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border: 1px solid var(--interactive-accent);
+  border-radius: var(--radius-m);
+}
+
+.personal-map-link-box p {
+  margin: 6px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+
+.personal-map-link-box button + button {
+  margin-left: 8px;
+}
+
+.personal-map-linked-benefits {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.personal-map-benefit-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 9px;
+  text-align: left;
+  white-space: normal;
+}
+
+.personal-map-benefit-row span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+
 .personal-map-detail-actions,
 .personal-map-editor-actions,
 .personal-map-modal-actions {

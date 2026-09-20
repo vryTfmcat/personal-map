@@ -5,6 +5,10 @@ import {
   createPlaceId,
   distanceMeters,
   extractExcerpt,
+  appendUnique,
+  buildPlaceRelation,
+  formatLocalDateTime,
+  normalizeStringList,
   normalizeText,
   parseMarkerIcon,
   safeFileStem,
@@ -49,4 +53,29 @@ test("initial zoom preserves a wider radius on a narrow mobile view", () => {
   const mobileZoom = zoomForRadius(22.6, 3000, 390, 650);
   assert.ok(desktopZoom > mobileZoom);
   assert.ok(mobileZoom > 12 && mobileZoom < 15);
+});
+
+test("link list helpers normalize scalar values and avoid duplicates", () => {
+  assert.deepEqual(normalizeStringList(" plc_one "), ["plc_one"]);
+  assert.deepEqual(appendUnique(["plc_one", "plc_one"], "plc_two"), ["plc_one", "plc_two"]);
+  assert.deepEqual(appendUnique(["plc_one"], "plc_one"), ["plc_one"]);
+});
+
+test("local timestamps include an explicit timezone offset", () => {
+  assert.match(formatLocalDateTime(new Date(2026, 8, 20, 13, 0, 1)), /^2026-09-20T13:00:01[+-]\d{2}:\d{2}$/);
+});
+
+test("place relation updates keep stable IDs and wikilinks in parallel", () => {
+  const relation = buildPlaceRelation(
+    ["plc_one"],
+    ["[[50_实体/地点/外部地点/一号店|一号店]]"],
+    "plc_two",
+    "[[50_实体/地点/外部地点/二号店|二号店]]",
+  );
+  assert.deepEqual(relation.placeIds, ["plc_one", "plc_two"]);
+  assert.deepEqual(relation.placeRefs, [
+    "[[50_实体/地点/外部地点/一号店|一号店]]",
+    "[[50_实体/地点/外部地点/二号店|二号店]]",
+  ]);
+  assert.equal(relation.changed, true);
 });

@@ -252,6 +252,26 @@ function normalizeTags(value) {
   if (typeof value === "string") return value.split(",").map((tag) => tag.trim()).filter(Boolean);
   return [];
 }
+function normalizeStringList(value) {
+  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+function appendUnique(values, value) {
+  const normalized = value.trim();
+  return [...new Set([...values.map((item) => item.trim()).filter(Boolean), normalized].filter(Boolean))];
+}
+function buildPlaceRelation(currentIds, currentRefs, placeId, placeRef) {
+  const ids = normalizeStringList(currentIds);
+  const refs = normalizeStringList(currentRefs);
+  const placeIds = appendUnique(ids, placeId);
+  const placeRefs = appendUnique(refs, placeRef);
+  return {
+    placeIds,
+    placeRefs,
+    changed: placeIds.length !== ids.length || placeRefs.length !== refs.length
+  };
+}
 function parseMarkerIcon(value) {
   const normalized = value.trim();
   if (normalized.startsWith("emoji:") && normalized.slice(6).trim()) {
@@ -281,6 +301,16 @@ function formatLocalDate(date = /* @__PURE__ */ new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+function formatLocalDateTime(date = /* @__PURE__ */ new Date()) {
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const offsetHours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, "0");
+  const offsetRemainder = String(Math.abs(offsetMinutes) % 60).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${formatLocalDate(date)}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainder}`;
 }
 
 // src/store.ts
@@ -383,6 +413,61 @@ var PersonalMapStore = class {
       panLimitMeters: positiveNumber(frontmatter.panLimitMeters, DEFAULT_CONFIG.panLimitMeters),
       showHomeMarker: frontmatterBoolean(frontmatter.showHomeMarker, DEFAULT_CONFIG.showHomeMarker)
     };
+  }
+  getBenefitLinkSource(file) {
+    const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") return null;
+    return {
+      file,
+      benefitId: frontmatterString(frontmatter.benefitId),
+      title: frontmatterString(frontmatter.title, file.basename),
+      merchantName: frontmatterString(frontmatter.merchantName),
+      usablePlaceIds: normalizeStringList(frontmatter.usablePlaceIds),
+      usableAt: normalizeStringList(frontmatter.usableAt)
+    };
+  }
+  async linkBenefitToPlace(source, place) {
+    let changed = false;
+    const linkTarget = place.file.path.replace(/\.md$/i, "");
+    const placeRef = `[[${linkTarget}|${place.title}]]`;
+    await this.app.fileManager.processFrontMatter(source.file, (frontmatter) => {
+      const relation = buildPlaceRelation(frontmatter.usablePlaceIds, frontmatter.usableAt, place.placeId, placeRef);
+      changed = relation.changed;
+      frontmatter.usablePlaceIds = relation.placeIds;
+      frontmatter.usableAt = relation.placeRefs;
+      if (changed) frontmatter.updated = formatLocalDateTime();
+    });
+    return changed;
+  }
+  loadActiveBenefitsForPlace(place) {
+    const results = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") continue;
+      if (frontmatterString(frontmatter.benefitStatus) !== "active") continue;
+      const ids = normalizeStringList(frontmatter.usablePlaceIds);
+      const refs = normalizeStringList(frontmatter.usableAt);
+      const linkedById = Boolean(place.placeId && ids.includes(place.placeId));
+      const linkedByRef = refs.some((ref) => {
+        const target = ref.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
+        if (!target) return false;
+        return this.app.metadataCache.getFirstLinkpathDest(target, file.path)?.path === place.file.path;
+      });
+      if (!linkedById && !linkedByRef) continue;
+      const price = frontmatterNumber(frontmatter.purchasePrice);
+      results.push({
+        file,
+        benefitId: frontmatterString(frontmatter.benefitId),
+        title: frontmatterString(frontmatter.title, file.basename),
+        merchantName: frontmatterString(frontmatter.merchantName),
+        validTo: frontmatterString(frontmatter.validTo),
+        purchasePrice: price
+      });
+    }
+    return results.sort((left, right) => left.validTo.localeCompare(right.validTo) || left.title.localeCompare(right.title, "zh-CN"));
+  }
+  async openFile(file) {
+    await this.app.workspace.getLeaf(false).openFile(file);
   }
   async loadPlaces(config) {
     const prefix = `${(0, import_obsidian.normalizePath)(config.placesFolder)}/`;
@@ -555,6 +640,7 @@ var COMMON_ICONS = [
   "house"
 ];
 var FALLBACK_CENTER = [114.0579, 22.5431];
+var AMAP_PLUGINS = ["AMap.PlaceSearch", "AMap.AutoComplete", "AMap.Geocoder", "AMap.Scale", "AMap.ToolBar"];
 function locationNumbers(location2) {
   if (!location2) return null;
   const longitude = typeof location2.getLng === "function" ? location2.getLng() : Number(location2.lng ?? location2[0]);
@@ -618,6 +704,7 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   pickMode = null;
   relocatingPlace = null;
   debounceTimer = null;
+  pendingBenefit = null;
   mapEl;
   resultEl;
   detailEl;
@@ -645,6 +732,20 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     this.clearMapObjects();
     if (this.map) this.map.destroy();
     this.map = null;
+  }
+  async startLinkingBenefit(file) {
+    const source = this.store.getBenefitLinkSource(file);
+    if (!source) {
+      new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5F53\u524D\u7B14\u8BB0\u4E0D\u662F\u53EF\u5173\u8054\u7684\u5238\u98DF\u6743\u76CA");
+      return;
+    }
+    this.pendingBenefit = source;
+    if (!this.config) await this.refreshData();
+    const query = source.merchantName || source.title;
+    this.searchInput.value = query;
+    this.renderLinkingPrompt();
+    this.setStatus(`\u6B63\u5728\u4E3A\u201C${source.title}\u201D\u5173\u8054\u5730\u70B9`);
+    if (this.placeSearch && query) await this.searchNearby(query);
   }
   renderShell() {
     const container = this.containerEl.children[1];
@@ -713,11 +814,16 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     }
     try {
       window._AMapSecurityConfig = { securityJsCode: credentials.securityCode };
-      this.AMap = await import_amap_jsapi_loader.default.load({
-        key: credentials.key,
-        version: "2.0",
-        plugins: ["AMap.PlaceSearch", "AMap.AutoComplete", "AMap.Geocoder", "AMap.Scale", "AMap.ToolBar"]
-      });
+      if (window.AMap?.Map) {
+        this.AMap = window.AMap;
+        await new Promise((resolve) => this.AMap.plugin(AMAP_PLUGINS, resolve));
+      } else {
+        this.AMap = await import_amap_jsapi_loader.default.load({
+          key: credentials.key,
+          version: "2.0",
+          plugins: AMAP_PLUGINS
+        });
+      }
       const center = this.store.coordinatesReady(this.home) ? [this.home.longitude, this.home.latitude] : FALLBACK_CENTER;
       const initialZoom = this.initialZoom(center[1]);
       this.mapEl.empty();
@@ -888,7 +994,15 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   }
   renderPlaceEditor(draft, existing) {
     this.detailEl.empty();
-    this.detailEl.createEl("h3", { text: existing ? "\u7F16\u8F91\u5730\u70B9" : "\u4FDD\u5B58\u5730\u70B9" });
+    this.detailEl.createEl("h3", {
+      text: this.pendingBenefit ? existing ? "\u786E\u8BA4\u5730\u70B9\u5E76\u5173\u8054\u5238" : "\u521B\u5EFA\u5730\u70B9\u5E76\u5173\u8054\u5238" : existing ? "\u7F16\u8F91\u5730\u70B9" : "\u4FDD\u5B58\u5730\u70B9"
+    });
+    if (this.pendingBenefit) {
+      this.detailEl.createEl("p", {
+        cls: "personal-map-link-context",
+        text: `\u5F85\u5173\u8054\uFF1A${this.pendingBenefit.title}`
+      });
+    }
     const form = this.detailEl.createDiv({ cls: "personal-map-editor" });
     const titleInput = this.field(form, "\u540D\u79F0", draft.title);
     const addressInput = this.field(form, "\u5730\u5740", draft.address);
@@ -930,7 +1044,10 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       }
     }
     const actions = form.createDiv({ cls: "personal-map-editor-actions" });
-    const save = actions.createEl("button", { text: existing ? "\u4FDD\u5B58\u4FEE\u6539" : "\u521B\u5EFA\u5730\u70B9\u7B14\u8BB0", cls: "mod-cta" });
+    const save = actions.createEl("button", {
+      text: this.pendingBenefit ? existing ? "\u4FDD\u5B58\u5E76\u5173\u8054" : "\u521B\u5EFA\u5E76\u5173\u8054" : existing ? "\u4FDD\u5B58\u4FEE\u6539" : "\u521B\u5EFA\u5730\u70B9\u7B14\u8BB0",
+      cls: "mod-cta"
+    });
     save.addEventListener("click", () => void this.saveEditorDraft({
       ...draft,
       title: titleInput.value.trim(),
@@ -950,6 +1067,10 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       const open = actions.createEl("button", { text: "\u6253\u5F00\u7B14\u8BB0" });
       open.addEventListener("click", () => void this.store.openPlace(existing));
     }
+    if (this.pendingBenefit) {
+      const cancel = actions.createEl("button", { text: "\u53D6\u6D88\u5173\u8054" });
+      cancel.addEventListener("click", () => this.cancelBenefitLink());
+    }
   }
   field(container, label, value, placeholder = "") {
     const wrap = container.createDiv({ cls: "personal-map-field" });
@@ -964,7 +1085,8 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     }
     if (existing) {
       await this.store.updatePlace(existing, draft);
-      new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5730\u70B9\u5DF2\u66F4\u65B0\uFF0C\u4E2A\u4EBA\u7ECF\u9A8C\u6B63\u6587\u672A\u6539\u52A8");
+      if (this.pendingBenefit) await this.completeBenefitLink(existing);
+      else new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5730\u70B9\u5DF2\u66F4\u65B0\uFF0C\u4E2A\u4EBA\u7ECF\u9A8C\u6B63\u6587\u672A\u6539\u52A8");
       await this.refreshData();
       this.clearPreview();
       return;
@@ -983,6 +1105,10 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       ).open();
       const open = this.detailEl.createEl("button", { text: `\u6253\u5F00\u5DF2\u6709\u5730\u70B9\uFF1A${duplicate.title}` });
       open.addEventListener("click", () => void this.store.openPlace(duplicate));
+      if (this.pendingBenefit) {
+        const link = this.detailEl.createEl("button", { text: `\u5173\u8054\u5DF2\u6709\u5730\u70B9\uFF1A${duplicate.title}`, cls: "mod-cta" });
+        link.addEventListener("click", () => void this.completeBenefitLink(duplicate));
+      }
       return;
     }
     await this.createDraft(draft);
@@ -990,7 +1116,8 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   async createDraft(draft) {
     if (!this.config) return;
     const created = await this.store.createPlace(this.config, draft);
-    new import_obsidian2.Notice(`\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5DF2\u521B\u5EFA ${created.title}`);
+    if (this.pendingBenefit) await this.completeBenefitLink(created);
+    else new import_obsidian2.Notice(`\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5DF2\u521B\u5EFA ${created.title}`);
     await this.refreshData();
     this.clearPreview();
     this.showDetails(this.places.find((place) => place.file.path === created.file.path) ?? created);
@@ -1095,6 +1222,15 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     text.createEl("h3", { text: place.title });
     if (place.placeType) text.createEl("small", { text: place.placeType });
     if (place.address) this.detailEl.createEl("p", { text: place.address });
+    if (this.pendingBenefit) {
+      const linkBox = this.detailEl.createDiv({ cls: "personal-map-link-box" });
+      linkBox.createEl("strong", { text: `\u5173\u8054\u201C${this.pendingBenefit.title}\u201D` });
+      linkBox.createEl("p", { text: "\u786E\u8BA4\u8FD9\u662F\u8BE5\u5238\u53EF\u7528\u7684\u5B9E\u9645\u95E8\u5E97\u540E\u518D\u5173\u8054\u3002" });
+      const link = linkBox.createEl("button", { text: "\u5173\u8054\u5230\u6B64\u5730\u70B9", cls: "mod-cta" });
+      link.addEventListener("click", () => void this.completeBenefitLink(place));
+      const cancel = linkBox.createEl("button", { text: "\u53D6\u6D88" });
+      cancel.addEventListener("click", () => this.cancelBenefitLink());
+    }
     this.detailEl.createEl("h4", { text: "\u4E2A\u4EBA\u7ECF\u9A8C" });
     this.detailEl.createEl("p", { text: place.excerpt || "\u5C1A\u672A\u8BB0\u5F55\uFF0C\u6253\u5F00\u7B14\u8BB0\u540E\u53EF\u4EE5\u81EA\u7531\u586B\u5199\u3002" });
     if (place.tags.length) this.detailEl.createEl("p", { cls: "personal-map-tags", text: place.tags.map((tag) => `#${tag}`).join("  ") });
@@ -1130,6 +1266,66 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
           }
         ).open();
       });
+    }
+    const benefits = this.detailEl.createDiv({ cls: "personal-map-linked-benefits" });
+    void this.renderLinkedBenefits(place, benefits);
+  }
+  renderLinkingPrompt() {
+    if (!this.pendingBenefit) return;
+    this.detailEl.empty();
+    this.detailEl.createEl("h3", { text: "\u5173\u8054\u5238\u5230\u5730\u70B9" });
+    this.detailEl.createEl("p", { text: this.pendingBenefit.title });
+    if (this.pendingBenefit.merchantName) {
+      this.detailEl.createEl("p", { text: `\u5546\u6237\uFF1A${this.pendingBenefit.merchantName}` });
+    }
+    this.detailEl.createEl("p", { text: "\u4ECE\u9AD8\u5FB7\u641C\u7D22\u7ED3\u679C\u6216\u5DF2\u6709\u5730\u70B9\u4E2D\u9009\u62E9\u5B9E\u9645\u95E8\u5E97\uFF1B\u4E0D\u4F1A\u6309\u5546\u6237\u6587\u5B57\u81EA\u52A8\u5EFA\u70B9\u3002" });
+    const cancel = this.detailEl.createEl("button", { text: "\u53D6\u6D88\u5173\u8054" });
+    cancel.addEventListener("click", () => this.cancelBenefitLink());
+  }
+  cancelBenefitLink() {
+    this.pendingBenefit = null;
+    this.clearPreview();
+    this.renderOfflineList();
+    this.detailEl.empty();
+    this.setStatus(`${this.places.length} \u4E2A\u5730\u70B9 \xB7 \u5DF2\u53D6\u6D88\u5173\u8054`);
+  }
+  async completeBenefitLink(place) {
+    const source = this.pendingBenefit;
+    if (!source) return;
+    this.pendingBenefit = null;
+    try {
+      const changed = await this.store.linkBenefitToPlace(source, place);
+      new import_obsidian2.Notice(changed ? `\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5DF2\u5C06\u201C${source.title}\u201D\u5173\u8054\u5230 ${place.title}` : `\u4E2A\u4EBA\u5730\u56FE\uFF1A\u8FD9\u5F20\u5238\u5DF2\u7ECF\u5173\u8054\u5230 ${place.title}`);
+      await this.refreshData();
+      this.clearPreview();
+      const current = this.places.find((candidate) => candidate.placeId === place.placeId) ?? place;
+      this.showDetails(current);
+      this.setStatus(`\u5DF2\u5173\u8054\uFF1A${source.title} \u2192 ${place.title}`);
+    } catch (error) {
+      this.pendingBenefit = source;
+      console.error("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5173\u8054\u5238\u5230\u5730\u70B9\u5931\u8D25", error);
+      new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5173\u8054\u5931\u8D25\uFF0C\u5238\u7B14\u8BB0\u672A\u88AB\u6539\u5199");
+      this.renderLinkingPrompt();
+    }
+  }
+  async renderLinkedBenefits(place, container) {
+    const benefits = this.store.loadActiveBenefitsForPlace(place);
+    if (!container.isConnected) return;
+    container.empty();
+    container.createEl("h4", { text: `\u53EF\u7528\u5238\uFF08${benefits.length}\uFF09` });
+    if (!benefits.length) {
+      container.createEl("p", { text: "\u6682\u65E0\u5173\u8054\u7684\u6709\u6548\u5238\u3002" });
+      return;
+    }
+    for (const benefit of benefits) {
+      const row = container.createEl("button", { cls: "personal-map-benefit-row" });
+      row.createEl("strong", { text: benefit.title });
+      const details = [
+        benefit.validTo ? `\u6709\u6548\u671F\u81F3 ${benefit.validTo}` : "\u672A\u586B\u5199\u5230\u671F\u65E5",
+        benefit.purchasePrice !== null ? `\xA5${benefit.purchasePrice.toFixed(2)}` : ""
+      ].filter(Boolean).join(" \xB7 ");
+      row.createEl("span", { text: details });
+      row.addEventListener("click", () => void this.store.openFile(benefit.file));
     }
   }
   populateFilters() {
@@ -1198,12 +1394,23 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
 // src/main.ts
 var PersonalMapPlugin = class extends import_obsidian3.Plugin {
   async onload() {
+    const store = new PersonalMapStore(this.app);
     this.registerView(VIEW_TYPE_PERSONAL_MAP, (leaf) => new PersonalMapView(leaf, this));
     this.addRibbonIcon("map-pinned", "\u6253\u5F00\u4E2A\u4EBA\u5730\u56FE", () => void this.activateView());
     this.addCommand({
       id: "open-personal-map",
       name: "\u6253\u5F00\u4E2A\u4EBA\u5730\u56FE",
       callback: () => void this.activateView()
+    });
+    this.addCommand({
+      id: "link-current-benefit-to-place",
+      name: "\u5C06\u5F53\u524D\u5238\u5173\u8054\u5230\u5730\u56FE\u5730\u70B9",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !store.getBenefitLinkSource(file)) return false;
+        if (!checking) void this.activateView(file);
+        return true;
+      }
     });
     this.addSettingTab(new PersonalMapSettingTab(this.app, this));
     const refresh = () => {
@@ -1233,13 +1440,16 @@ var PersonalMapPlugin = class extends import_obsidian3.Plugin {
     window.localStorage.setItem(this.secretKey("key"), credentials.key.trim());
     window.localStorage.setItem(this.secretKey("securityCode"), credentials.securityCode.trim());
   }
-  async activateView() {
+  async activateView(benefitFile) {
     let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PERSONAL_MAP)[0];
     if (!leaf) {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: VIEW_TYPE_PERSONAL_MAP, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);
+    if (benefitFile && leaf.view instanceof PersonalMapView) {
+      await leaf.view.startLinkingBenefit(benefitFile);
+    }
   }
 };
 var PersonalMapSettingTab = class extends import_obsidian3.PluginSettingTab {
