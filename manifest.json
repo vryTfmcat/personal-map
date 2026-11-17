@@ -1,7 +1,7 @@
 {
   "id": "personal-map",
   "name": "Personal Map",
-  "version": "0.3.6",
+  "version": "0.4.1",
   "minAppVersion": "1.6.0",
   "description": "Manage Markdown places and link benefit notes to confirmed AMap POIs.",
   "author": "vryTfmcat",

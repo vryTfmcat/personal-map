@@ -11,6 +11,7 @@ export interface AMapCredentials {
 export interface MapConfig {
   placesFolder: string;
   centerPlace: string;
+  searchCity: string;
   initialRadiusMeters: number;
   searchRadiusMeters: number;
   panLimitMeters: number;
@@ -30,6 +31,7 @@ export interface PlaceRecord {
   markerIcon: string;
   markerColor: string;
   home: boolean;
+  dailyVisit?: boolean;
   privacy: string;
   source: string;
   tags: string[];
@@ -62,6 +64,9 @@ export interface RecentStyle {
 }
 
 export interface BenefitLinkSource {
+  benefitStatus: string;
+  validFrom: string;
+  validTo: string;
   file: TFile;
   benefitId: string;
   title: string;

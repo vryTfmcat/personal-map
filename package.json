@@ -1,6 +1,6 @@
 {
   "name": "personal-map",
-  "version": "0.3.6",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "A Markdown-first personal map for Obsidian, powered by AMap JS API 2.0.",
@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "dev": "node esbuild.config.mjs",
-    "test": "node --experimental-strip-types --test src/*.test.ts"
+    "test": "node --experimental-strip-types --test src/*.test.ts scripts/*.test.mjs"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1"

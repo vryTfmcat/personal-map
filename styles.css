@@ -358,3 +358,45 @@
     min-width: 110px;
   }
 }
+
+.personal-map-collection { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--background-secondary); border-right: 1px solid var(--background-modifier-border); }
+.personal-map-collection-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.personal-map-collection-controls strong, .personal-map-collection-controls select:first-of-type { grid-column: 1 / -1; }
+.personal-map-collection-controls select { width: 100%; min-width: 0; }
+.personal-map-collection .personal-map-results { flex: 1; border: 0; }
+.personal-map-group summary { cursor: pointer; color: var(--text-muted); font-weight: 600; margin: 10px 0; }
+.personal-map-result.is-selected { outline: 2px solid #f97316; outline-offset: -2px; background: var(--background-modifier-hover); }
+.personal-map-icon-grid { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
+.personal-map-icon-grid button { height: auto; min-height: 60px; gap: 4px; }
+.personal-map-icon-grid button > span { font-size: 22px; }
+.personal-map-icon-grid small { font-size: 11px; white-space: normal; line-height: 1.3; }
+.personal-map-icon-grid button[aria-pressed="true"] { outline: 2px solid var(--interactive-accent); }
+.personal-map-marker.is-emoji { width: 34px; height: 34px; transform: rotate(-45deg); font-size: 0; }
+.personal-map-marker.is-emoji::before { content: attr(data-emoji); transform: rotate(45deg); font-size: 20px; }
+.personal-map-detail-heading .personal-map-marker.is-emoji { transform: none; }
+.personal-map-detail-heading .personal-map-marker.is-emoji::before { transform: none; }
+.personal-map-marker.is-selected { outline: 5px solid rgb(249 115 22 / 35%); box-shadow: 0 0 0 10px rgb(249 115 22 / 16%), 0 3px 10px rgb(0 0 0 / 40%); animation: personal-map-pulse 1.5s ease-in-out 3; }
+.personal-map-focus { position: relative; width: 34px; height: 34px; }
+.personal-map-focus-label { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); max-width: 260px; width: max-content; white-space: normal; padding: 6px 10px; background: #9a3412; color: white; border-radius: 6px; font-size: 13px; line-height: 1.4; box-shadow: 0 2px 8px #0005; pointer-events: none; }
+.personal-map-search-wrap select { max-width: 145px; }
+@media (max-width: 900px) {
+  .personal-map-collection { order: 2; flex: 0 0 auto; max-height: 38%; border: 0; overflow: hidden; }
+  .personal-map-collection .personal-map-results { max-height: none; }
+  .personal-map-collection-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .personal-map-search-wrap { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .personal-map-marker.is-selected, .personal-map-marker.is-preview { animation: none; } }
+
+.personal-map-place-marker { position: relative; width: 34px; height: 34px; flex: 0 0 34px; }
+.personal-map-marker-badge { position: absolute; z-index: 1; top: -11px; right: -17px; min-width: 22px; padding: 2px 4px; border: 2px solid white; border-radius: 6px; color: white; font-size: 11px; font-weight: 700; line-height: 14px; white-space: nowrap; box-shadow: 0 1px 4px #0005; pointer-events: none; }
+.personal-map-marker-badge.has-benefit { background: #15803d; }
+.personal-map-marker-badge.is-daily { background: #0369a1; top: auto; bottom: -6px; right: -12px; }
+.personal-map-detail-heading { gap: 24px; }
+.personal-map-place-state, .personal-map-legend { font-size: var(--font-smallest); }
+.personal-map-benefit-controls { padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--background-modifier-border); }
+.personal-map-benefit-controls small, .personal-map-benefit-meta { color: var(--text-muted); font-size: var(--font-smallest); overflow-wrap: anywhere; white-space: normal; }
+.personal-map-benefit-meta { margin-top: 4px; }
+
+.personal-map-benefit-picker-input { flex-direction: column; align-items: stretch; }
+.personal-map-benefit-picker-input .personal-map-benefit-controls { width: 100%; flex: 0 0 auto; }
+.personal-map-benefit-picker-input .prompt-input { width: 100%; flex: 0 0 auto; }

@@ -195,11 +195,6 @@ __export(main_exports, {
   default: () => PersonalMapPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
-
-// src/view.ts
-var import_amap_jsapi_loader = __toESM(require_dist(), 1);
-var import_obsidian2 = require("obsidian");
 
 // src/helpers.ts
 var CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -313,6 +308,69 @@ function formatLocalDateTime(date = /* @__PURE__ */ new Date()) {
   return `${formatLocalDate(date)}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainder}`;
 }
 
+// src/main.ts
+var import_obsidian3 = require("obsidian");
+
+// src/benefits.ts
+function benefitAvailability(benefit, today = formatLocalDate()) {
+  if (benefit.benefitStatus === "used") return { available: false, label: "\u5DF2\u4F7F\u7528", rank: 3 };
+  if (benefit.benefitStatus === "void") return { available: false, label: "\u5DF2\u4F5C\u5E9F / \u9000\u6B3E", rank: 4 };
+  if (benefit.benefitStatus === "expired" || benefit.validTo && benefit.validTo.slice(0, 10) < today) return { available: false, label: "\u5DF2\u8FC7\u671F", rank: 2 };
+  if (benefit.benefitStatus !== "active") return { available: false, label: "\u4E0D\u53EF\u7528 / \u72B6\u6001\u5F85\u786E\u8BA4", rank: 5 };
+  if (benefit.validFrom && benefit.validFrom.slice(0, 10) > today) return { available: false, label: "\u5C1A\u672A\u5F00\u59CB", rank: 1 };
+  return { available: true, label: "\u5F53\u524D\u53EF\u7528", rank: 0 };
+}
+function matchesBenefitScope(benefit, scope) {
+  return scope === "all" || benefitAvailability(benefit).available === (scope === "available");
+}
+function sortBenefits(benefits) {
+  return [...benefits].sort((a, b) => benefitAvailability(a).rank - benefitAvailability(b).rank || (a.validTo || "9999").localeCompare(b.validTo || "9999") || a.title.localeCompare(b.title, "zh-CN"));
+}
+function searchBenefits(benefits, query, scope) {
+  const words = query.trim().split(/\s+/).map(normalizeText).filter(Boolean);
+  return sortBenefits(benefits.filter((b) => matchesBenefitScope(b, scope) && words.every((word) => normalizeText(`${b.title} ${b.merchantName} ${benefitAvailability(b).label}`).includes(word))));
+}
+
+// src/view.ts
+var import_amap_jsapi_loader = __toESM(require_dist(), 1);
+var import_obsidian2 = require("obsidian");
+
+// src/categories.ts
+var PLACE_CATEGORIES = [
+  { label: "\u706B\u9505 / \u6C64\u9505", emoji: "\u{1F372}", color: "#dc2626", pattern: /火锅|猪肚鸡|椰子鸡|酱鸭煲|锅圈/ },
+  { label: "\u70E4\u9C7C / \u9178\u83DC\u9C7C", emoji: "\u{1F41F}", color: "#0284c7", pattern: /烤鱼|酸菜鱼|渔语鱼/ },
+  { label: "\u70E4\u8089 / \u70E7\u70E4", emoji: "\u{1F969}", color: "#b45309", pattern: /烤肉|烧肉|烧烤|烧鸡|流浪泡泡|犀先生/ },
+  { label: "\u725B\u6392 / \u897F\u9910", emoji: "\u{1F37D}\uFE0F", color: "#9333ea", pattern: /牛排|西堤|gaga/i },
+  { label: "\u62AB\u8428", emoji: "\u{1F355}", color: "#ea580c", pattern: /必胜客|披萨|比萨|达美乐/ },
+  { label: "\u6C49\u5821 / \u4E09\u660E\u6CBB", emoji: "\u{1F354}", color: "#d97706", pattern: /汉堡|塔斯汀|赛百味/ },
+  { label: "\u70B8\u9E21 / \u5C0F\u98DF", emoji: "\u{1F357}", color: "#ea580c", pattern: /炸鸡|肯德基|kfc|鸡腿/i },
+  { label: "\u70E7\u814A / \u5364\u5473", emoji: "\u{1F986}", color: "#b45309", pattern: /烤鸭|烧鹅|烧腊|卤味|鸭脖|绝味|紫燕|掂腊/ },
+  { label: "\u7C73\u7C89 / \u9762\u98DF", emoji: "\u{1F35C}", color: "#ca8a04", pattern: /米线|羊肉粉|羊杂粉|面馆|小面|手工面|干挑面|拌粉|秦十娘|劉福湶|刘福湶/ },
+  { label: "\u70B9\u5FC3 / \u5C0F\u5403", emoji: "\u{1F95F}", color: "#ca8a04", pattern: /牛肉饼|肉夹馍|水饺|肠粉|点心/ },
+  { label: "\u7CA5 / \u6C64", emoji: "\u{1F963}", color: "#65a30d", pattern: /粥/ },
+  { label: "\u8336\u9910\u5385", emoji: "\u{1FAD6}", color: "#0d9488", pattern: /茶餐厅|冰室|港湾/ },
+  { label: "\u6CF0\u56FD / \u4E1C\u5357\u4E9A\u83DC", emoji: "\u{1F35B}", color: "#16a34a", pattern: /泰国|泰式|泰香米|泰曼里|东南亚/ },
+  { label: "\u4E2D\u9910 / \u5BB6\u5E38\u83DC", emoji: "\u{1F958}", color: "#c2410c", pattern: /新疆菜|客家|湘菜|川菜|下饭菜|小碗菜|锅包肉|绿茶餐厅|阿娜尔|围龙屋/ },
+  { label: "\u7C73\u996D / \u5DE5\u4F5C\u9910", emoji: "\u{1F35A}", color: "#a16207", pattern: /饭|飯|小厨|厨房|白切|真功夫/ },
+  { label: "\u86CB\u7CD5 / \u70D8\u7119", emoji: "\u{1F370}", color: "#db2777", pattern: /蛋糕|巴斯克|提拉米苏|初见的甜|烘焙|面包/ },
+  { label: "\u7CD6\u6C34 / \u751C\u54C1", emoji: "\u{1F36E}", color: "#c026d3", pattern: /糖水|甜品|赵记|姜撞奶|豆花/ },
+  { label: "\u5976\u8336 / \u996E\u54C1", emoji: "\u{1F9CB}", color: "#a16207", pattern: /奶茶|茶铺|手作|柠茶|果茶/ },
+  { label: "\u5496\u5561", emoji: "\u2615", color: "#78350f", pattern: /咖啡|coffee/i },
+  { label: "\u96F6\u98DF / \u51B0\u6DC7\u6DCB", emoji: "\u{1F366}", color: "#e11d48", pattern: /零食|冰淇淋|冰激凌|粒上皇|洽小可|好想来/ },
+  { label: "\u8D85\u5E02 / \u4FBF\u5229\u5E97", emoji: "\u{1F6D2}", color: "#2563eb", pattern: /盒马|超盒算|永辉|超市|便利|7.eleven/i },
+  { label: "\u5BA0\u7269\u6D17\u62A4", emoji: "\u{1F43E}", color: "#7c3aed", pattern: /宠物|猫洗澡/ },
+  { label: "\u624B\u5DE5 / \u4F53\u9A8C", emoji: "\u{1F3A8}", color: "#0891b2", pattern: /拼豆|手工|3d打印|立刻次元/i },
+  { label: "\u773C\u955C", emoji: "\u{1F453}", color: "#475569", pattern: /眼镜|镜片/ },
+  { label: "\u8D2D\u7269 / \u5176\u4ED6", emoji: "\u{1F6CD}\uFE0F", color: "#64748b", pattern: /小米之家|swatch|购物/i }
+];
+function suggestCategory(title, benefitTitles = "") {
+  return PLACE_CATEGORIES.find((category) => category.pattern.test(title)) ?? PLACE_CATEGORIES.find((category) => category.pattern.test(benefitTitles));
+}
+function categoryForPlace(place) {
+  if (place.home) return "\u4F4F\u5B85";
+  return PLACE_CATEGORIES.find((category) => `emoji:${category.emoji}` === place.markerIcon)?.label ?? suggestCategory(place.title)?.label ?? "\u5176\u4ED6\u5730\u70B9";
+}
+
 // src/store.ts
 var import_obsidian = require("obsidian");
 
@@ -324,6 +382,7 @@ var DEFAULT_CONFIG_PATH = "30_\u9879\u76EE/\u4E2A\u4EBA\u5730\u56FE/\u914D\u7F6E
 var DEFAULT_CONFIG = {
   placesFolder: DEFAULT_PLACES_FOLDER,
   centerPlace: "",
+  searchCity: "",
   initialRadiusMeters: 3e3,
   searchRadiusMeters: 5e3,
   panLimitMeters: 5e3,
@@ -391,6 +450,13 @@ var PersonalMapStore = class {
   constructor(app) {
     this.app = app;
   }
+  configPath = DEFAULT_CONFIG_PATH;
+  centerPath = null;
+  resolveCenter(config) {
+    const target = config.centerPlace.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
+    if (!target) return null;
+    return this.app.metadataCache.getFirstLinkpathDest(target, this.configPath);
+  }
   async ensureFolder(path) {
     const normalized = (0, import_obsidian.normalizePath)(path);
     if (this.app.vault.getAbstractFileByPath(normalized)) return;
@@ -402,12 +468,29 @@ var PersonalMapStore = class {
     }
   }
   async loadConfig() {
-    const file = this.app.vault.getAbstractFileByPath(DEFAULT_CONFIG_PATH);
-    if (!(file instanceof import_obsidian.TFile)) return { ...DEFAULT_CONFIG };
+    const defaultFile = this.app.vault.getAbstractFileByPath(DEFAULT_CONFIG_PATH);
+    const candidates = this.app.vault.getMarkdownFiles().filter(
+      (file2) => this.app.metadataCache.getFileCache(file2)?.frontmatter?.personalMapConfig === true
+    );
+    const file = defaultFile instanceof import_obsidian.TFile ? defaultFile : candidates.length === 1 ? candidates[0] : null;
+    if (!file) {
+      throw new Error(candidates.length > 1 ? "\u627E\u5230\u591A\u4EFD\u5730\u56FE\u914D\u7F6E\uFF0C\u8BF7\u53EA\u4FDD\u7559\u4E00\u4EFD personalMapConfig: true \u7684\u914D\u7F6E\uFF0C\u6216\u5C06\u9009\u5B9A\u914D\u7F6E\u653E\u5230 " + DEFAULT_CONFIG_PATH : "\u672A\u627E\u5230\u5730\u56FE\u914D\u7F6E\uFF0C\u8BF7\u521B\u5EFA\u5E26 personalMapConfig: true \u7684\u914D\u7F6E\u7B14\u8BB0\uFF0C\u518D\u91CD\u65B0\u6253\u5F00\u5730\u56FE");
+    }
+    this.configPath = file.path;
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    let placesFolder = (0, import_obsidian.normalizePath)(frontmatterString(frontmatter.placesFolder, DEFAULT_CONFIG.placesFolder));
+    const prefix = file.path.endsWith(DEFAULT_CONFIG_PATH) ? file.path.slice(0, -DEFAULT_CONFIG_PATH.length) : "";
+    if (prefix && !this.app.vault.getAbstractFileByPath(placesFolder)) {
+      const nested = (0, import_obsidian.normalizePath)(prefix + placesFolder);
+      const nestedRoot = (0, import_obsidian.normalizePath)(prefix + placesFolder.split("/")[0]);
+      if (this.app.vault.getAbstractFileByPath(nested) || this.app.vault.getAbstractFileByPath(nestedRoot)) {
+        placesFolder = nested;
+      }
+    }
     return {
-      placesFolder: frontmatterString(frontmatter.placesFolder, DEFAULT_CONFIG.placesFolder),
+      placesFolder,
       centerPlace: frontmatterString(frontmatter.centerPlace, DEFAULT_CONFIG.centerPlace),
+      searchCity: frontmatterString(frontmatter.searchCity),
       initialRadiusMeters: positiveNumber(frontmatter.initialRadiusMeters, DEFAULT_CONFIG.initialRadiusMeters),
       searchRadiusMeters: positiveNumber(frontmatter.searchRadiusMeters, DEFAULT_CONFIG.searchRadiusMeters),
       panLimitMeters: positiveNumber(frontmatter.panLimitMeters, DEFAULT_CONFIG.panLimitMeters),
@@ -419,6 +502,9 @@ var PersonalMapStore = class {
     if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") return null;
     return {
       file,
+      benefitStatus: frontmatterString(frontmatter.benefitStatus),
+      validFrom: frontmatterString(frontmatter.validFrom),
+      validTo: frontmatterString(frontmatter.validTo),
       benefitId: frontmatterString(frontmatter.benefitId),
       title: frontmatterString(frontmatter.title, file.basename),
       merchantName: frontmatterString(frontmatter.merchantName),
@@ -444,7 +530,7 @@ var PersonalMapStore = class {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") continue;
-      if (frontmatterString(frontmatter.benefitStatus) !== "active") continue;
+      if (!benefitAvailability({ benefitStatus: frontmatterString(frontmatter.benefitStatus), validFrom: frontmatterString(frontmatter.validFrom), validTo: frontmatterString(frontmatter.validTo) }).available) continue;
       const ids = normalizeStringList(frontmatter.usablePlaceIds);
       const refs = normalizeStringList(frontmatter.usableAt);
       const linkedById = Boolean(place.placeId && ids.includes(place.placeId));
@@ -473,11 +559,12 @@ var PersonalMapStore = class {
     const files = this.app.vault.getMarkdownFiles().filter(
       (file) => file.path.startsWith(`${placesFolder}/`)
     );
-    const centerTarget = config.centerPlace.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
-    if (centerTarget) {
-      const centerFile = this.app.metadataCache.getFirstLinkpathDest(centerTarget, DEFAULT_CONFIG_PATH);
-      if (centerFile && !files.some((file) => file.path === centerFile.path)) files.push(centerFile);
+    const centerFile = this.resolveCenter(config);
+    this.centerPath = centerFile?.path ?? null;
+    if (config.centerPlace && !centerFile) {
+      throw new Error("\u5730\u56FE\u4E2D\u5FC3\u94FE\u63A5\u65E0\u6CD5\u89E3\u6790\uFF0C\u8BF7\u68C0\u67E5\u914D\u7F6E\u4E2D\u7684 centerPlace \u548C\u5B9E\u9645\u7B14\u8BB0\u8DEF\u5F84");
     }
+    if (centerFile && !files.some((file) => file.path === centerFile.path)) files.push(centerFile);
     const records = [];
     for (const file of files) {
       const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -501,6 +588,7 @@ var PersonalMapStore = class {
         markerIcon: frontmatterString(frontmatter.markerIcon, "lucide:map-pin"),
         markerColor: frontmatterString(frontmatter.markerColor, "#2563eb"),
         home: frontmatterBoolean(frontmatter.home),
+        dailyVisit: frontmatterBoolean(frontmatter.mapDailyVisit),
         privacy: frontmatterString(frontmatter.privacy, "private"),
         source: frontmatterString(frontmatter.source, "manual"),
         tags: normalizeTags(frontmatter.tags),
@@ -508,6 +596,9 @@ var PersonalMapStore = class {
         created: frontmatterString(frontmatter.created),
         updated: frontmatterString(frontmatter.updated)
       });
+    }
+    if (centerFile && !records.some((place) => place.file.path === centerFile.path)) {
+      throw new Error("\u4E2D\u5FC3\u7B14\u8BB0\u7F3A\u5C11 personalMapPlace: true\uFF0C\u8BF7\u68C0\u67E5\u5176\u5C5E\u6027");
     }
     return records.sort((left, right) => Number(right.home) - Number(left.home) || left.title.localeCompare(right.title, "zh-CN"));
   }
@@ -607,6 +698,11 @@ var PersonalMapStore = class {
       frontmatter.tags = tags;
     });
   }
+  async setDailyVisit(place, enabled) {
+    await this.app.fileManager.processFrontMatter(place.file, (frontmatter) => {
+      frontmatter.mapDailyVisit = enabled;
+    });
+  }
   async deletePlace(place) {
     await this.app.vault.trash(place.file, true);
   }
@@ -614,6 +710,8 @@ var PersonalMapStore = class {
     await this.app.workspace.getLeaf(false).openFile(place.file);
   }
   findHome(places) {
+    const configured = places.find((place) => place.file.path === this.centerPath);
+    if (configured) return { ...configured, home: true };
     return places.find((place) => place.home) ?? null;
   }
   coordinatesReady(place) {
@@ -623,24 +721,6 @@ var PersonalMapStore = class {
 
 // src/view.ts
 var VIEW_TYPE_PERSONAL_MAP = "personal-map-view";
-var COMMON_ICONS = [
-  "map-pin",
-  "utensils",
-  "coffee",
-  "shopping-bag",
-  "store",
-  "hospital",
-  "school",
-  "trees",
-  "train",
-  "bus",
-  "car",
-  "dumbbell",
-  "book-open",
-  "camera",
-  "house"
-];
-var FALLBACK_CENTER = [114.0579, 22.5431];
 var AMAP_PLUGINS = ["AMap.PlaceSearch", "AMap.AutoComplete", "AMap.Geocoder", "AMap.Scale", "AMap.ToolBar"];
 function locationNumbers(location2) {
   if (!location2) return null;
@@ -686,25 +766,62 @@ var ConfirmationModal = class extends import_obsidian2.Modal {
     });
   }
 };
-var BenefitSourceModal = class extends import_obsidian2.FuzzySuggestModal {
-  constructor(app, isBenefitFile, onChoose) {
+var BenefitSourceModal = class extends import_obsidian2.SuggestModal {
+  constructor(app, store, onChoose) {
     super(app);
-    this.isBenefitFile = isBenefitFile;
     this.onChoose = onChoose;
-    this.setPlaceholder("\u9009\u62E9\u5238 Markdown \u6216\u5305\u542B\u5238\u7684\u6587\u4EF6\u5939");
+    this.limit = 100;
+    this.sources = app.vault.getMarkdownFiles().map((file) => store.getBenefitLinkSource(file)).filter((source) => source !== null);
+    this.folders = app.vault.getAllLoadedFiles().filter((item) => item instanceof import_obsidian2.TFolder && item.path !== "/" && item.path.length > 0 && this.sources.some((s) => s.file.path.startsWith(`${item.path}/`)));
+    this.setPlaceholder("\u641C\u7D22\u5238\u540D\u6216\u5546\u6237\uFF1B\u9ED8\u8BA4\u4EC5\u5F53\u524D\u53EF\u7528\u5238");
+    const controls = document.createElement("div");
+    controls.className = "personal-map-benefit-controls";
+    const label = document.createElement("label");
+    label.textContent = "\u5238\u72B6\u6001 ";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "\u9009\u62E9\u5238\u72B6\u6001");
+    for (const [value, text] of [["available", "\u5F53\u524D\u53EF\u7528"], ["history", "\u5386\u53F2 / \u4E0D\u53EF\u7528"], ["all", "\u5168\u90E8\uFF08\u53EF\u7528\u4F18\u5148\uFF09"]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      select.appendChild(option);
+    }
+    label.appendChild(select);
+    controls.appendChild(label);
+    const hint = document.createElement("small");
+    hint.textContent = "\u6309\u72B6\u6001\u548C\u6709\u6548\u671F\u533A\u5206\uFF1B\u9009\u6587\u4EF6\u5939\u53EA\u5BFC\u5165\u5F53\u524D\u8303\u56F4\u5185\u7684\u5238\u3002";
+    controls.appendChild(hint);
+    this.inputEl.parentElement.classList.add("personal-map-benefit-picker-input");
+    this.inputEl.parentElement.insertBefore(controls, this.inputEl);
+    select.addEventListener("change", () => {
+      this.benefitScope = select.value;
+      this.inputEl.dispatchEvent(new Event("input"));
+      this.inputEl.focus();
+    });
   }
-  getItems() {
-    const files = this.app.vault.getMarkdownFiles().filter(this.isBenefitFile);
-    const folders = this.app.vault.getAllLoadedFiles().filter(
-      (item) => item instanceof import_obsidian2.TFolder && item.path.length > 0 && item.path !== "/" && files.some((file) => file.path.startsWith(`${item.path}/`))
-    );
-    return [...folders, ...files];
+  benefitScope = "available";
+  sources;
+  folders;
+  getSuggestions(query) {
+    const sources = searchBenefits(this.sources, query, this.benefitScope);
+    const words = query.trim().split(/\s+/).map(normalizeText).filter(Boolean);
+    const folders = this.folders.filter((folder) => words.every((word) => normalizeText(folder.path).includes(word)) && this.sources.some((s) => s.file.path.startsWith(`${folder.path}/`) && matchesBenefitScope(s, this.benefitScope))).sort((a, b) => a.path.localeCompare(b.path, "zh-CN"));
+    return [...sources, ...folders];
   }
-  getItemText(item) {
-    return `${item instanceof import_obsidian2.TFolder ? "\u5238\u6587\u4EF6\u5939" : "\u5238 Markdown"} \xB7 ${item.path}`;
+  renderSuggestion(item, el) {
+    if (item instanceof import_obsidian2.TFolder) {
+      const count = this.sources.filter((s) => s.file.path.startsWith(`${item.path}/`) && matchesBenefitScope(s, this.benefitScope)).length;
+      el.createEl("strong", { text: `\u{1F4C1} \u5238\u6587\u4EF6\u5939 \xB7 ${count} \u5F20\u7B26\u5408\u5F53\u524D\u8303\u56F4` });
+      el.createDiv({ text: item.path, cls: "personal-map-benefit-meta" });
+      return;
+    }
+    const status = benefitAvailability(item);
+    el.createEl("strong", { text: `${status.available ? "\u{1F7E2}" : "\u26AA"} ${status.label} \xB7 ${item.title}` });
+    el.createDiv({ cls: "personal-map-benefit-meta", text: [item.merchantName, item.validFrom ? `\u8D77 ${item.validFrom}` : "", item.validTo ? `\u81F3 ${item.validTo}` : "\u672A\u586B\u5199\u5230\u671F\u65E5"].filter(Boolean).join(" \xB7 ") });
+    el.createDiv({ cls: "personal-map-benefit-meta", text: item.file.path });
   }
-  onChooseItem(item) {
-    this.onChoose(item);
+  onChooseSuggestion(item) {
+    this.onChoose(item instanceof import_obsidian2.TFolder ? item : item.file, this.benefitScope);
   }
 };
 var PersonalMapView = class extends import_obsidian2.ItemView {
@@ -731,6 +848,13 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   pendingBenefitQueue = [];
   benefitQueueTotal = 0;
   benefitQueueCompleted = 0;
+  collapsedGroups = /* @__PURE__ */ new Set();
+  focusedMarker = null;
+  searchScope;
+  categoryFilter;
+  benefitFilter;
+  sortOrder;
+  activeBenefits = /* @__PURE__ */ new Map();
   selectedPlaceId = null;
   mapEl;
   resultEl;
@@ -753,7 +877,7 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   async onOpen() {
     this.renderShell();
     await this.refreshData();
-    await this.initializeMap();
+    if (this.config) await this.initializeMap();
   }
   async onClose() {
     if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
@@ -784,6 +908,8 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     this.pendingBenefit = source;
     if (!this.config) await this.refreshData();
     const query = source.merchantName || source.title;
+    this.searchScope.value = "all";
+    this.searchInput.placeholder = "\u641C\u7D22\u9AD8\u5FB7\u5730\u70B9\u53CA\u6211\u7684\u6536\u85CF";
     this.searchInput.value = query;
     this.renderLinkingPrompt();
     this.setStatus(`\u6B63\u5728\u5904\u7406\u5238 ${this.benefitQueueCompleted + 1}/${this.benefitQueueTotal}\uFF1A${source.title}`);
@@ -808,10 +934,19 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     container.addClass("personal-map-view");
     const toolbar = container.createDiv({ cls: "personal-map-toolbar" });
     const searchWrap = toolbar.createDiv({ cls: "personal-map-search-wrap" });
+    this.searchScope = searchWrap.createEl("select", { attr: { "aria-label": "\u641C\u7D22\u8303\u56F4" } });
+    this.searchScope.createEl("option", { value: "saved", text: "\u4EC5\u6211\u7684\u6536\u85CF" });
+    this.searchScope.createEl("option", { value: "all", text: "\u6240\u6709\u5730\u70B9" });
+    this.searchScope.addEventListener("change", () => {
+      this.searchSequence += 1;
+      if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
+      this.searchInput.placeholder = this.searchScope.value === "saved" ? "\u641C\u7D22\u6536\u85CF\u7684\u5E97\u540D\u3001\u5730\u5740\u3001\u7ECF\u9A8C" : "\u641C\u7D22\u9AD8\u5FB7\u5730\u70B9\u53CA\u6211\u7684\u6536\u85CF";
+      this.renderOfflineList();
+    });
     this.searchInput = searchWrap.createEl("input", {
       type: "search",
-      placeholder: "\u641C\u7D22\u9644\u8FD1\u5E97\u540D\uFF0C\u56DE\u8F66\u6267\u884C\u641C\u7D22",
-      attr: { "aria-label": "\u641C\u7D22\u9AD8\u5FB7\u5730\u70B9" }
+      placeholder: "\u641C\u7D22\u6536\u85CF\u7684\u5E97\u540D\u3001\u5730\u5740\u3001\u7ECF\u9A8C",
+      attr: { "aria-label": "\u641C\u7D22\u5730\u70B9" }
     });
     const searchButton = searchWrap.createEl("button", { text: "\u641C\u7D22" });
     searchButton.addEventListener("click", () => void this.searchNearby(this.searchInput.value));
@@ -824,11 +959,11 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       placeholder: "\u7B5B\u9009\u5730\u70B9\u548C\u7ECF\u9A8C",
       attr: { "aria-label": "\u7B5B\u9009\u5730\u70B9" }
     });
-    this.textFilter.addEventListener("input", () => this.renderMarkers());
+    this.textFilter.addEventListener("input", () => this.updateCollection());
     this.typeFilter = toolbar.createEl("select", { attr: { "aria-label": "\u6309\u7C7B\u578B\u7B5B\u9009" } });
-    this.typeFilter.addEventListener("change", () => this.renderMarkers());
+    this.typeFilter.addEventListener("change", () => this.updateCollection());
     this.tagFilter = toolbar.createEl("select", { attr: { "aria-label": "\u6309\u6807\u7B7E\u7B5B\u9009" } });
-    this.tagFilter.addEventListener("change", () => this.renderMarkers());
+    this.tagFilter.addEventListener("change", () => this.updateCollection());
     const homeButton = toolbar.createEl("button", { text: "\u56DE\u5230\u5BB6" });
     homeButton.addEventListener("click", () => this.focusHome());
     const pickButton = toolbar.createEl("button", { text: "\u5730\u56FE\u9009\u70B9" });
@@ -839,55 +974,100 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       this.map?.setDefaultCursor?.("crosshair");
     });
     const refreshButton = toolbar.createEl("button", { text: "\u5237\u65B0" });
-    refreshButton.addEventListener("click", () => void this.refreshData());
+    refreshButton.addEventListener("click", () => void (async () => {
+      await this.refreshData();
+      if (this.config && !this.map) await this.initializeMap();
+    })());
     const importBenefitButton = toolbar.createEl("button", { text: "\u4ECE\u5238\u6DFB\u52A0\u5730\u70B9" });
     importBenefitButton.addEventListener("click", () => this.openBenefitSourcePicker());
     this.statusEl = container.createDiv({ cls: "personal-map-status" });
     this.sourceEl = container.createDiv({ cls: "personal-map-sources" });
     const workspace = container.createDiv({ cls: "personal-map-workspace" });
-    this.resultEl = workspace.createDiv({ cls: "personal-map-results" });
+    const collection = workspace.createDiv({ cls: "personal-map-collection" });
+    const controls = collection.createDiv({ cls: "personal-map-collection-controls" });
+    controls.createEl("strong", { text: "\u6211\u7684\u6536\u85CF" });
+    this.categoryFilter = controls.createEl("select", { attr: { "aria-label": "\u6309\u56E2\u8D2D\u5206\u7C7B" } });
+    this.categoryFilter.createEl("option", { value: "", text: "\u5168\u90E8\u56E2\u8D2D\u5206\u7C7B" });
+    this.benefitFilter = controls.createEl("select", { attr: { "aria-label": "\u6309\u5238\u72B6\u6001\u7B5B\u9009" } });
+    for (const [value, text] of [["", "\u5168\u90E8\u5238\u72B6\u6001"], ["available", "\u6709\u5173\u8054\u53EF\u7528\u5238"], ["soon", "7 \u5929\u5185\u5230\u671F"], ["none", "\u65E0\u5173\u8054\u53EF\u7528\u5238"], ["daily", "\u65E5\u5E38\u76F4\u53BB\uFF08\u65E0\u9700\u56E2\u8D2D\uFF09"]]) {
+      this.benefitFilter.createEl("option", { value, text });
+    }
+    this.sortOrder = controls.createEl("select", { attr: { "aria-label": "\u6536\u85CF\u6392\u5E8F" } });
+    for (const [value, text] of [["category", "\u6309\u5206\u7C7B\u5206\u7EC4"], ["name", "\u6309\u540D\u79F0\u6392\u5E8F"], ["distance", "\u79BB\u5BB6\u7531\u8FD1\u5230\u8FDC"], ["expiry", "\u5238\u5FEB\u5230\u671F\u4F18\u5148"], ["updated", "\u6700\u8FD1\u66F4\u65B0\u4F18\u5148"]]) {
+      this.sortOrder.createEl("option", { value, text });
+    }
+    for (const control of [this.categoryFilter, this.benefitFilter, this.sortOrder]) control.addEventListener("change", () => this.updateCollection());
+    const reset = controls.createEl("button", { text: "\u6E05\u9664\u7B5B\u9009" });
+    reset.addEventListener("click", () => {
+      for (const input of [this.searchInput, this.textFilter, this.typeFilter, this.tagFilter, this.categoryFilter, this.benefitFilter]) input.value = "";
+      this.searchSequence += 1;
+      this.updateCollection();
+    });
+    this.resultEl = collection.createDiv({ cls: "personal-map-results" });
     this.mapEl = workspace.createDiv({ cls: "personal-map-canvas" });
     this.detailEl = workspace.createDiv({ cls: "personal-map-details" });
   }
   async refreshData() {
-    this.config = await this.store.loadConfig();
-    await this.refreshPlacesFromCurrentConfig();
+    try {
+      this.config = await this.store.loadConfig();
+      await this.refreshPlacesFromCurrentConfig();
+    } catch (error) {
+      this.config = null;
+      this.home = null;
+      this.places = [];
+      this.clearMapObjects();
+      this.map?.destroy();
+      this.map = null;
+      this.mapEl.empty();
+      this.resultEl.empty();
+      this.detailEl.empty();
+      const message = error instanceof Error ? error.message : String(error);
+      this.mapEl.createEl("p", { text: message });
+      this.setStatus(message);
+    }
   }
   async refreshPlacesFromCurrentConfig() {
     if (!this.config) return;
     this.places = await this.store.loadPlaces(this.config);
     this.home = this.store.findHome(this.places);
+    this.activeBenefits = new Map(this.places.map((place) => [place.placeId, this.store.loadActiveBenefitsForPlace(place)]));
     this.populateFilters();
     this.renderPlaceSource();
     this.renderOfflineList();
     if (this.map) {
-      this.applyHomeViewport();
+      this.configureSearchServices();
       this.renderMarkers();
     }
     if (this.selectedPlaceId) {
       const selected = this.places.find((place) => place.placeId === this.selectedPlaceId);
-      if (selected) this.showDetails(selected);
+      if (selected) {
+        this.showDetails(selected, false);
+        if (this.filteredPlaces().includes(selected)) this.highlightPlace(selected);
+        else this.clearFocus();
+      }
     }
     this.setStatus(`${this.places.length} \u4E2A\u5730\u70B9 \xB7 \u6570\u636E\u6765\u81EA ${this.config.placesFolder}`);
   }
   openBenefitSourcePicker() {
     new BenefitSourceModal(
       this.app,
-      (file) => this.store.getBenefitLinkSource(file) !== null,
-      (item) => void this.importBenefitSource(item)
+      this.store,
+      (item, scope) => void this.importBenefitSource(item, scope)
     ).open();
   }
-  async importBenefitSource(item) {
+  async importBenefitSource(item, scope = "available") {
     const files = item instanceof import_obsidian2.TFile ? [item] : this.app.vault.getMarkdownFiles().filter((file) => file.path.startsWith(`${item.path}/`));
-    const sources = files.map((file) => this.store.getBenefitLinkSource(file)).filter((source) => source !== null);
+    const sources = sortBenefits(files.map((file) => this.store.getBenefitLinkSource(file)).filter((source) => source !== null && matchesBenefitScope(source, scope)));
     if (item instanceof import_obsidian2.TFolder) new import_obsidian2.Notice(`\u4E2A\u4EBA\u5730\u56FE\uFF1A\u5DF2\u5EFA\u7ACB ${sources.length} \u5F20\u5238\u7684\u5730\u70B9\u5173\u8054\u961F\u5217`);
     await this.startBenefitImport(sources);
   }
   renderPlaceSource() {
     if (!this.sourceEl || !this.config) return;
     this.sourceEl.empty();
+    this.sourceEl.createEl("span", { cls: "personal-map-legend", text: "\u{1F7E2} \u5238\uFF1A\u5173\u8054\u53EF\u7528\u5238\u3000\u{1F535} \u5E38\uFF1A\u65E5\u5E38\u76F4\u53BB\uFF08\u65E0\u9700\u56E2\u8D2D\uFF09\u3000\u65E0\u89D2\u6807\uFF1A\u65E0\u5173\u8054\u53EF\u7528\u5238" });
     this.sourceEl.createEl("span", { text: "\u5730\u70B9\u4E3B\u6863" });
     this.sourceEl.createEl("span", { cls: "personal-map-source-chip is-primary", text: this.config.placesFolder });
+    this.sourceEl.createEl("span", { cls: "personal-map-source-chip", text: `\u641C\u7D22\uFF1A${this.config.searchCity || "\u5168\u56FD\uFF08\u9644\u8FD1\u641C\u7D22\u4F7F\u7528\u4E2D\u5FC3\u5750\u6807\uFF09"}` });
   }
   async initializeMap() {
     const credentials = this.plugin.getCredentials();
@@ -906,24 +1086,26 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       } else {
         this.AMap = await import_amap_jsapi_loader.default.load({ key: credentials.key, version: "2.0", plugins: AMAP_PLUGINS });
       }
-      const center = this.store.coordinatesReady(this.home) ? [this.home.longitude, this.home.latitude] : FALLBACK_CENTER;
-      const initialZoom = this.initialZoom(center[1]);
+      const center = this.store.coordinatesReady(this.home) ? [this.home.longitude, this.home.latitude] : null;
+      const initialZoom = center ? this.initialZoom(center[1]) : 10;
       this.mapEl.empty();
       this.map = new this.AMap.Map(this.mapEl, {
         viewMode: "2D",
         zoom: initialZoom,
-        center,
+        ...center ? { center } : {},
         mapStyle: "amap://styles/whitesmoke",
         resizeEnable: true
       });
       this.map.addControl(new this.AMap.Scale());
       this.map.addControl(new this.AMap.ToolBar({ position: { right: "12px", top: "12px" } }));
-      this.geocoder = new this.AMap.Geocoder({ city: "\u6DF1\u5733" });
-      this.placeSearch = new this.AMap.PlaceSearch({ pageSize: 20, pageIndex: 1, city: "\u6DF1\u5733", citylimit: true });
-      this.autoComplete = new this.AMap.AutoComplete({ city: "\u6DF1\u5733", citylimit: true });
+      this.configureSearchServices();
       this.map.on("click", (event) => void this.handleMapClick(event));
       this.applyHomeViewport();
       this.renderMarkers();
+      if (this.selectedPlaceId) {
+        const selected = this.places.find((p) => p.placeId === this.selectedPlaceId);
+        if (selected) this.focusPlace(selected);
+      }
       if (!this.store.coordinatesReady(this.home)) this.renderLocateHomePrompt();
     } catch (error) {
       console.error("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u9AD8\u5FB7\u5730\u56FE\u52A0\u8F7D\u5931\u8D25", error);
@@ -933,6 +1115,14 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       empty.createEl("p", { text: "\u8BF7\u68C0\u67E5\u7F51\u7EDC\u3001JS API Key\u3001\u5B89\u5168\u5BC6\u94A5\u548C\u9AD8\u5FB7\u63A7\u5236\u53F0\u4E2D\u7684 Key \u7C7B\u578B\u3002\u5730\u70B9 Markdown \u4E0D\u53D7\u5F71\u54CD\u3002" });
       this.setStatus("\u5730\u56FE\u52A0\u8F7D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u9AD8\u5FB7\u914D\u7F6E");
     }
+  }
+  configureSearchServices() {
+    if (!this.AMap) return;
+    const city = this.config?.searchCity.trim() || "\u5168\u56FD";
+    const citylimit = city !== "\u5168\u56FD";
+    this.geocoder = new this.AMap.Geocoder({ city });
+    this.placeSearch = new this.AMap.PlaceSearch({ pageSize: 20, pageIndex: 1, city, citylimit });
+    this.autoComplete = new this.AMap.AutoComplete({ city, citylimit });
   }
   renderLocateHomePrompt() {
     if (!this.home) return;
@@ -979,10 +1169,16 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   scheduleSuggestions() {
     if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
     const keyword = this.searchInput.value.trim();
-    if (!keyword || !this.autoComplete) return;
+    const sequence = ++this.searchSequence;
+    if (this.searchScope.value === "saved" || !keyword) {
+      this.updateCollection();
+      return;
+    }
+    this.renderOfflineList();
+    if (!this.autoComplete) return;
     this.debounceTimer = window.setTimeout(() => {
       this.autoComplete.search(keyword, (status, result) => {
-        if (status !== "complete") return;
+        if (sequence !== this.searchSequence || this.searchScope.value !== "all" || status !== "complete") return;
         const candidates = (result?.tips ?? []).slice(0, 10).map((tip) => {
           const coordinates = locationNumbers(tip.location);
           if (!coordinates) return null;
@@ -1004,9 +1200,15 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   }
   async searchNearby(keyword) {
     const query = keyword.trim();
-    if (!query) return;
+    if (this.debounceTimer !== null) window.clearTimeout(this.debounceTimer);
+    this.searchSequence += 1;
+    if (!query || this.searchScope.value === "saved") {
+      this.updateCollection();
+      return;
+    }
     if (!this.placeSearch) {
-      new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u9AD8\u5FB7\u670D\u52A1\u5C1A\u672A\u52A0\u8F7D");
+      this.renderOfflineList();
+      new import_obsidian2.Notice("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u9AD8\u5FB7\u670D\u52A1\u5C1A\u672A\u52A0\u8F7D\uFF0C\u5148\u663E\u793A\u6536\u85CF\u7ED3\u679C");
       return;
     }
     const sequence = ++this.searchSequence;
@@ -1049,28 +1251,31 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   }
   renderSearchResults(candidates, heading) {
     this.resultEl.empty();
-    this.resultEl.createEl("h3", { text: heading });
+    this.appendSavedPlaces();
+    this.resultEl.createEl("h3", { text: `\u9AD8\u5FB7 \xB7 ${heading}` });
     if (!candidates.length) {
       this.resultEl.createEl("p", { text: "\u6682\u65E0\u7ED3\u679C\u3002" });
       return;
     }
     for (const candidate of candidates) {
       const row = this.resultEl.createEl("button", { cls: "personal-map-result" });
-      row.createEl("strong", { text: candidate.title });
+      const existing = this.store.findDuplicates(candidate, this.places)[0];
+      row.createEl("strong", { text: `${existing ? "\u5DF2\u6536\u85CF \xB7 " : ""}${candidate.title}` });
       row.createEl("span", { text: candidate.address || "\u5730\u5740\u672A\u63D0\u4F9B" });
       if (candidate.distance !== null) row.createEl("small", { text: `${Math.round(candidate.distance)} \u7C73` });
       if (this.pendingBenefit) row.createEl("small", { text: "\u70B9\u51FB\u540E\u521B\u5EFA\u5730\u70B9\u5E76\u81EA\u52A8\u5173\u8054\u5F53\u524D\u5238" });
       row.addEventListener("click", () => {
         if (this.pendingBenefit) {
-          const existing = this.store.findDuplicates(candidate, this.places)[0];
-          if (existing) {
-            void this.completeBenefitLink(existing);
+          const existing2 = this.store.findDuplicates(candidate, this.places)[0];
+          if (existing2) {
+            void this.completeBenefitLink(existing2);
             return;
           }
           void this.createDraft(candidate);
           return;
         }
-        this.previewCandidate(candidate);
+        if (existing) this.showDetails(existing);
+        else this.previewCandidate(candidate);
       });
     }
   }
@@ -1086,7 +1291,8 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       this.map.add(this.previewMarker);
       this.map.setCenter([candidate.longitude, candidate.latitude]);
     }
-    this.renderPlaceEditor(candidate, existing);
+    const category = !existing && suggestCategory(candidate.title, this.pendingBenefit?.title);
+    this.renderPlaceEditor(category ? { ...candidate, markerIcon: `emoji:${category.emoji}`, markerColor: category.color, placeType: category.label } : candidate, existing);
   }
   renderPlaceEditor(draft, existing) {
     this.detailEl.empty();
@@ -1105,21 +1311,24 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     colorWrap.createEl("label", { text: "\u989C\u8272" });
     const colorInput = colorWrap.createEl("input", { type: "color", value: draft.markerColor || "#2563eb" });
     const common = form.createDiv({ cls: "personal-map-icon-grid" });
-    for (const icon of COMMON_ICONS) {
-      const button = common.createEl("button", { attr: { type: "button", title: icon, "aria-label": icon } });
-      try {
-        (0, import_obsidian2.setIcon)(button, icon);
-      } catch {
-        button.setText("\u25CF");
-      }
+    for (const category of PLACE_CATEGORIES) {
+      const button = common.createEl("button", { attr: { type: "button", title: category.label, "aria-label": category.label, "aria-pressed": String(iconInput.value === `emoji:${category.emoji}`) } });
+      button.createEl("span", { text: category.emoji });
+      button.createEl("small", { text: category.label });
       button.addEventListener("click", () => {
-        iconInput.value = `lucide:${icon}`;
+        iconInput.value = `emoji:${category.emoji}`;
+        colorInput.value = category.color;
+        typeInput.value = category.label;
+        common.querySelectorAll("button").forEach((el) => el.setAttribute("aria-pressed", String(el === button)));
       });
     }
-    for (const emoji of ["\u{1F35C}", "\u2615", "\u{1F370}", "\u{1F6D2}", "\u{1F3E5}", "\u{1F3EB}", "\u{1F333}", "\u{1F4CD}"]) {
-      const button = common.createEl("button", { text: emoji, attr: { type: "button", title: emoji } });
+    for (const [icon, label] of [["house", "\u4F4F\u5B85"], ["map-pin", "\u901A\u7528\u5730\u70B9"]]) {
+      const button = common.createEl("button", { attr: { type: "button", title: label } });
+      const glyph = button.createSpan();
+      (0, import_obsidian2.setIcon)(glyph, icon);
+      button.createEl("small", { text: label });
       button.addEventListener("click", () => {
-        iconInput.value = `emoji:${emoji}`;
+        iconInput.value = `lucide:${icon}`;
       });
     }
     const recentStyles = this.store.getRecentStyles(this.places);
@@ -1275,21 +1484,14 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     if (!this.map || !this.AMap) return;
     if (this.markers.length) this.map.remove(this.markers);
     this.markers = [];
-    const text = this.textFilter?.value.trim().toLocaleLowerCase() ?? "";
-    const type = this.typeFilter?.value ?? "";
-    const tag = this.tagFilter?.value ?? "";
-    for (const place of this.places) {
+    for (const place of this.filteredPlaces()) {
       if (!hasCoordinates(place)) continue;
       if (place.home && this.config?.showHomeMarker === false) continue;
-      const haystack = [place.title, place.address, place.placeType, place.excerpt, ...place.tags].join(" ").toLocaleLowerCase();
-      if (text && !haystack.includes(text)) continue;
-      if (type && place.placeType !== type) continue;
-      if (tag && !place.tags.includes(tag)) continue;
       const marker = new this.AMap.Marker({
         position: [place.longitude, place.latitude],
         title: place.title,
         anchor: "bottom-center",
-        content: this.buildMarkerElement(place.markerIcon, place.markerColor, false, place.home),
+        content: this.buildPlaceMarkerElement(place),
         zIndex: place.home ? 120 : 100
       });
       marker.on("click", () => {
@@ -1300,13 +1502,38 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     }
     if (this.markers.length) this.map.add(this.markers);
   }
+  buildPlaceMarkerElement(place, color = place.markerColor) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "personal-map-place-marker";
+    wrapper.appendChild(this.buildMarkerElement(place.markerIcon, color, false, place.home));
+    const count = this.activeBenefits.get(place.placeId)?.length ?? 0;
+    const states = [];
+    if (count) {
+      const badge = document.createElement("span");
+      badge.className = "personal-map-marker-badge has-benefit";
+      badge.textContent = `\u5238${count}`;
+      wrapper.appendChild(badge);
+      states.push(`${count} \u5F20\u5173\u8054\u53EF\u7528\u5238`);
+    }
+    if (place.dailyVisit) {
+      const badge = document.createElement("span");
+      badge.className = "personal-map-marker-badge is-daily";
+      badge.textContent = "\u5E38";
+      wrapper.appendChild(badge);
+      states.push("\u65E5\u5E38\u76F4\u53BB\uFF0C\u65E0\u9700\u56E2\u8D2D");
+    }
+    wrapper.title = `${place.title} \xB7 ${states.join(" \xB7 ") || "\u65E0\u5173\u8054\u53EF\u7528\u5238"}`;
+    wrapper.setAttribute("aria-label", wrapper.title);
+    return wrapper;
+  }
   buildMarkerElement(iconSpec, color, preview = false, home = false) {
     const marker = document.createElement("div");
     marker.className = `personal-map-marker${preview ? " is-preview" : ""}${home ? " is-home" : ""}`;
     marker.style.setProperty("--personal-map-marker-color", color || "#2563eb");
     const icon = parseMarkerIcon(iconSpec);
     if (icon.kind === "emoji") {
-      marker.textContent = icon.value;
+      marker.dataset.emoji = icon.value;
+      marker.setAttribute("aria-label", icon.value);
       marker.classList.add("is-emoji");
     } else {
       try {
@@ -1318,14 +1545,17 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     }
     return marker;
   }
-  showDetails(place) {
+  showDetails(place, focus = true) {
     this.selectedPlaceId = place.placeId || null;
+    this.renderOfflineList();
+    if (focus) this.focusPlace(place);
     this.detailEl.empty();
     const heading = this.detailEl.createDiv({ cls: "personal-map-detail-heading" });
-    heading.appendChild(this.buildMarkerElement(place.markerIcon, place.markerColor, false, place.home));
+    heading.appendChild(this.buildPlaceMarkerElement(place));
     const text = heading.createDiv();
     text.createEl("h3", { text: place.title });
     if (place.placeType) text.createEl("small", { text: place.placeType });
+    this.detailEl.createEl("p", { cls: "personal-map-place-state", text: [place.dailyVisit ? "\u{1F535} \u65E5\u5E38\u76F4\u53BB \xB7 \u65E0\u9700\u56E2\u8D2D" : "", this.activeBenefits.get(place.placeId)?.length ?? 0 ? `\u{1F7E2} ${this.activeBenefits.get(place.placeId).length} \u5F20\u5173\u8054\u53EF\u7528\u5238` : "\u6682\u65E0\u5173\u8054\u53EF\u7528\u5238"].filter(Boolean).join(" \uFF5C ") });
     if (place.address) this.detailEl.createEl("p", { text: place.address });
     if (this.pendingBenefit) {
       const linkBox = this.detailEl.createDiv({ cls: "personal-map-link-box" });
@@ -1340,8 +1570,24 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     this.detailEl.createEl("p", { text: place.excerpt || "\u5C1A\u672A\u8BB0\u5F55\uFF0C\u6253\u5F00\u7B14\u8BB0\u540E\u53EF\u4EE5\u81EA\u7531\u586B\u5199\u3002" });
     if (place.tags.length) this.detailEl.createEl("p", { cls: "personal-map-tags", text: place.tags.map((tag) => `#${tag}`).join("  ") });
     const actions = this.detailEl.createDiv({ cls: "personal-map-detail-actions" });
-    const open = actions.createEl("button", { text: "\u6253\u5F00\u7B14\u8BB0", cls: "mod-cta" });
+    const center = actions.createEl("button", { text: "\u5B9A\u4F4D\u4E2D\u5FC3", cls: "mod-cta" });
+    center.addEventListener("click", () => this.focusPlace(place));
+    const open = actions.createEl("button", { text: "\u6253\u5F00\u7B14\u8BB0" });
     open.addEventListener("click", () => void this.store.openPlace(place));
+    const daily = actions.createEl("button", { text: place.dailyVisit ? "\u53D6\u6D88\u65E5\u5E38\u76F4\u53BB\u6807\u8BB0" : "\u6807\u4E3A\u65E5\u5E38\u76F4\u53BB", attr: { "aria-pressed": String(Boolean(place.dailyVisit)) } });
+    daily.addEventListener("click", () => void (async () => {
+      daily.disabled = true;
+      try {
+        await this.store.setDailyVisit(place, !place.dailyVisit);
+        place.dailyVisit = !place.dailyVisit;
+        this.updateCollection();
+        this.showDetails(place, false);
+      } catch (error) {
+        daily.disabled = false;
+        console.error("\u4E2A\u4EBA\u5730\u56FE\uFF1A\u65E5\u5E38\u76F4\u53BB\u6807\u8BB0\u4FDD\u5B58\u5931\u8D25", error);
+        new import_obsidian2.Notice("\u65E5\u5E38\u76F4\u53BB\u6807\u8BB0\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
+      }
+    })());
     const edit = actions.createEl("button", { text: "\u7F16\u8F91\u6807\u70B9" });
     edit.addEventListener("click", () => {
       const draft = placeToDraft(place);
@@ -1379,7 +1625,7 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     if (!this.pendingBenefit) return;
     this.detailEl.empty();
     this.detailEl.createEl("h3", { text: "\u5173\u8054\u5238\u5230\u5730\u70B9" });
-    this.detailEl.createEl("p", { text: this.pendingBenefit.title });
+    this.detailEl.createEl("p", { text: `${benefitAvailability(this.pendingBenefit).label} \xB7 ${this.pendingBenefit.title}` });
     if (this.pendingBenefit.merchantName) this.detailEl.createEl("p", { text: `\u5546\u6237\uFF1A${this.pendingBenefit.merchantName}` });
     if (this.benefitQueueTotal > 1) {
       this.detailEl.createEl("p", { text: `\u961F\u5217\u8FDB\u5EA6\uFF1A${this.benefitQueueCompleted + 1}/${this.benefitQueueTotal}` });
@@ -1465,6 +1711,16 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   }
   populateFilters() {
     if (!this.typeFilter || !this.tagFilter) return;
+    const selectedCategory = this.categoryFilter.value;
+    this.categoryFilter.empty();
+    this.categoryFilter.createEl("option", { value: "", text: "\u5168\u90E8\u56E2\u8D2D\u5206\u7C7B" });
+    const counts = /* @__PURE__ */ new Map();
+    for (const place of this.places) {
+      const key = categoryForPlace(place);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const [label, count] of [...counts].sort(([a], [b]) => a.localeCompare(b, "zh-CN"))) this.categoryFilter.createEl("option", { value: label, text: `${label}\uFF08${count}\uFF09` });
+    this.categoryFilter.value = counts.has(selectedCategory) ? selectedCategory : "";
     const selectedType = this.typeFilter.value;
     const selectedTag = this.tagFilter.value;
     const types = [...new Set(this.places.map((place) => place.placeType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -1478,20 +1734,120 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
     for (const tag of tags) this.tagFilter.createEl("option", { text: `#${tag}`, value: tag });
     this.tagFilter.value = tags.includes(selectedTag) ? selectedTag : "";
   }
+  updateCollection() {
+    this.renderOfflineList();
+    this.renderMarkers();
+    this.clearFocus();
+    const selected = this.places.find((place) => place.placeId === this.selectedPlaceId);
+    if (selected && this.filteredPlaces().includes(selected)) this.highlightPlace(selected);
+  }
+  filteredPlaces() {
+    const queries = [this.searchInput?.value ?? "", this.textFilter?.value ?? ""].map(normalizeText).filter(Boolean);
+    return this.places.filter((place) => {
+      const haystack = normalizeText([place.title, place.address, place.placeType, categoryForPlace(place), place.excerpt, ...place.tags].join(" "));
+      if (!queries.every((query) => haystack.includes(query))) return false;
+      if (this.typeFilter?.value && place.placeType !== this.typeFilter.value) return false;
+      if (this.tagFilter?.value && !place.tags.includes(this.tagFilter.value)) return false;
+      if (this.categoryFilter?.value && categoryForPlace(place) !== this.categoryFilter.value) return false;
+      const benefits = this.activeBenefits.get(place.placeId) ?? [];
+      const filter = this.benefitFilter?.value;
+      if (filter === "daily" && !place.dailyVisit) return false;
+      if (filter === "available" && !benefits.length || filter === "none" && benefits.length) return false;
+      if (filter === "soon" && !benefits.some((b) => this.daysUntil(b.validTo) <= 7)) return false;
+      return true;
+    });
+  }
+  daysUntil(date) {
+    if (!date) return Infinity;
+    const today = /* @__PURE__ */ new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil(((/* @__PURE__ */ new Date(`${date.slice(0, 10)}T00:00:00`)).getTime() - today.getTime()) / 864e5);
+  }
+  distanceFromHome(place) {
+    return hasCoordinates(place) && this.store.coordinatesReady(this.home) ? distanceMeters(this.home, { longitude: place.longitude, latitude: place.latitude }) : Infinity;
+  }
   renderOfflineList() {
+    const scrollTop = this.resultEl.scrollTop;
     this.resultEl.empty();
-    this.resultEl.createEl("h3", { text: "\u5DF2\u4FDD\u5B58\u5730\u70B9" });
-    if (!this.places.length) {
-      this.resultEl.createEl("p", { text: "\u8FD8\u6CA1\u6709\u5730\u70B9\u7B14\u8BB0\u3002" });
-      return;
-    }
-    for (const place of this.places) {
-      const row = this.resultEl.createEl("button", { cls: "personal-map-result" });
-      row.createEl("strong", { text: place.title });
+    this.appendSavedPlaces();
+    this.resultEl.scrollTop = scrollTop;
+  }
+  appendSavedPlaces() {
+    const places = this.filteredPlaces();
+    const order = this.sortOrder?.value ?? "category";
+    const expiry = (p) => Math.min(...(this.activeBenefits.get(p.placeId) ?? []).map((b) => this.daysUntil(b.validTo)));
+    places.sort((a, b) => {
+      let compared = 0;
+      if (order === "category") compared = categoryForPlace(a).localeCompare(categoryForPlace(b), "zh-CN");
+      if (order === "distance") compared = this.distanceFromHome(a) - this.distanceFromHome(b);
+      if (order === "expiry") compared = expiry(a) - expiry(b);
+      if (order === "updated") compared = b.updated.localeCompare(a.updated);
+      return (Number.isNaN(compared) ? 0 : compared) || a.title.localeCompare(b.title, "zh-CN");
+    });
+    this.resultEl.createEl("h3", { text: `\u6536\u85CF\u5730\u70B9 ${places.length} / ${this.places.length}` });
+    if (!places.length) this.resultEl.createEl("p", { text: this.places.length ? "\u6CA1\u6709\u5339\u914D\u7684\u6536\u85CF\uFF0C\u53EF\u6E05\u9664\u7B5B\u9009\u91CD\u8BD5\u3002" : "\u8FD8\u6CA1\u6709\u5730\u70B9\u7B14\u8BB0\u3002" });
+    const groups = /* @__PURE__ */ new Map();
+    for (const place of places) {
+      const category = categoryForPlace(place);
+      let container = this.resultEl;
+      if (order === "category") {
+        if (!groups.has(category)) {
+          const group = this.resultEl.createEl("details", { cls: "personal-map-group" });
+          group.open = !this.collapsedGroups.has(category);
+          group.addEventListener("toggle", () => {
+            if (group.open) this.collapsedGroups.delete(category);
+            else this.collapsedGroups.add(category);
+          });
+          group.createEl("summary", { text: `${category} \xB7 ${places.filter((p) => categoryForPlace(p) === category).length}` });
+          groups.set(category, group);
+        }
+        container = groups.get(category);
+      }
+      const row = container.createEl("button", { cls: `personal-map-result${place.placeId === this.selectedPlaceId ? " is-selected" : ""}`, attr: { "aria-pressed": String(place.placeId === this.selectedPlaceId) } });
+      row.createEl("strong", { text: `${parseMarkerIcon(place.markerIcon).kind === "emoji" ? parseMarkerIcon(place.markerIcon).value + " " : ""}${place.title}` });
       row.createEl("span", { text: place.address || "\u5C1A\u672A\u586B\u5199\u5730\u5740" });
-      if (!hasCoordinates(place)) row.createEl("small", { text: "\u7B49\u5F85\u5B9A\u4F4D" });
+      const benefits = this.activeBenefits.get(place.placeId) ?? [];
+      const distance = this.distanceFromHome(place);
+      const days = expiry(place);
+      row.createEl("small", { text: [order !== "category" ? category : "", place.dailyVisit ? "\u{1F535} \u65E5\u5E38\u76F4\u53BB" : "", benefits.length ? `${benefits.length} \u5F20\u5173\u8054\u53EF\u7528\u5238${days <= 7 ? ` \xB7 ${days === 0 ? "\u4ECA\u5929" : days + "\u5929\u540E"}\u5230\u671F` : ""}` : "\u65E0\u5173\u8054\u53EF\u7528\u5238", Number.isFinite(distance) ? `\u8DDD\u5BB6 ${distance < 1e3 ? Math.round(distance) + "\u7C73" : (distance / 1e3).toFixed(1) + "\u516C\u91CC"}` : "", !hasCoordinates(place) ? "\u7B49\u5F85\u5B9A\u4F4D" : ""].filter(Boolean).join(" \xB7 ") });
       row.addEventListener("click", () => this.showDetails(place));
     }
+  }
+  clearFocus() {
+    if (this.focusedMarker && this.map) this.map.remove(this.focusedMarker);
+    this.focusedMarker = null;
+  }
+  highlightPlace(place) {
+    if (!this.map || !this.AMap || !hasCoordinates(place)) return;
+    this.clearFocus();
+    const content = document.createElement("div");
+    content.className = "personal-map-focus";
+    const marker = this.buildPlaceMarkerElement(place, "#f97316");
+    marker.querySelector(".personal-map-marker")?.classList.add("is-selected");
+    content.appendChild(marker);
+    const label = document.createElement("span");
+    label.className = "personal-map-focus-label";
+    label.textContent = place.title;
+    content.appendChild(label);
+    this.focusedMarker = new this.AMap.Marker({ position: [place.longitude, place.latitude], anchor: "bottom-center", content, zIndex: 500, bubble: false });
+    this.focusedMarker.on("click", () => this.showDetails(place, false));
+    this.map.add(this.focusedMarker);
+  }
+  focusPlace(place) {
+    this.clearPreview();
+    this.clearFocus();
+    if (!hasCoordinates(place)) {
+      this.setStatus(`\u201C${place.title}\u201D\u5C1A\u672A\u8BBE\u7F6E\u5750\u6807\uFF0C\u8BF7\u7F16\u8F91\u6807\u70B9\u5B9A\u4F4D\u3002`);
+      return;
+    }
+    if (!this.map) {
+      this.setStatus("\u5730\u56FE\u5C1A\u672A\u52A0\u8F7D\uFF0C\u4ECD\u53EF\u67E5\u770B\u5730\u70B9\u7B14\u8BB0\u3002");
+      return;
+    }
+    this.map.clearLimitBounds();
+    this.map.setZoomAndCenter(Math.max(16, this.map.getZoom?.() ?? 16), [place.longitude, place.latitude]);
+    this.highlightPlace(place);
+    this.setStatus(`\u5DF2\u5B9A\u4F4D\uFF1A${place.title} \xB7 \u6A59\u8272\u5149\u5708\u4E3A\u5F53\u524D\u95E8\u5E97`);
   }
   applyHomeViewport() {
     if (!this.map || !this.AMap || !this.config || !this.store.coordinatesReady(this.home)) return;
@@ -1505,8 +1861,9 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
       this.renderLocateHomePrompt();
       return;
     }
-    this.map?.setZoomAndCenter?.(this.initialZoom(this.home.latitude), [this.home.longitude, this.home.latitude]);
-    this.showDetails(this.home);
+    this.applyHomeViewport();
+    this.highlightPlace(this.home);
+    this.showDetails(this.home, false);
   }
   initialZoom(latitude) {
     const radius = this.config?.initialRadiusMeters ?? 3e3;
@@ -1518,6 +1875,7 @@ var PersonalMapView = class extends import_obsidian2.ItemView {
   }
   clearMapObjects() {
     this.clearPreview();
+    this.clearFocus();
     if (this.map && this.markers.length) this.map.remove(this.markers);
     this.markers = [];
   }
@@ -1562,10 +1920,24 @@ var PersonalMapPlugin = class extends import_obsidian3.Plugin {
     this.register(() => {
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
     });
+    let day = formatLocalDate();
+    const refreshDay = () => {
+      const current = formatLocalDate();
+      if (current !== day) {
+        day = current;
+        refresh();
+      }
+    };
+    this.registerInterval(window.setInterval(refreshDay, 6e4));
+    this.registerDomEvent(document, "visibilitychange", refreshDay);
     this.registerEvent(this.app.vault.on("create", refresh));
     this.registerEvent(this.app.vault.on("modify", refresh));
     this.registerEvent(this.app.vault.on("delete", refresh));
     this.registerEvent(this.app.vault.on("rename", refresh));
+    this.registerEvent(this.app.metadataCache.on("changed", (_file, _data, cache) => {
+      const fm = cache.frontmatter;
+      if (fm?.personalMapPlace === true || fm?.couponSchedulerItem === true || fm?.personalMapConfig === true) refresh();
+    }));
   }
   onunload() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_PERSONAL_MAP);

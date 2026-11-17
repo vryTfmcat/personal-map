@@ -1,3 +1,4 @@
+import { formatLocalDate } from "./helpers";
 import {
   App,
   Notice,
@@ -46,10 +47,19 @@ export default class PersonalMapPlugin extends Plugin implements PersonalMapPlug
     this.register(() => {
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
     });
+    let day = formatLocalDate();
+    const refreshDay = () => { const current = formatLocalDate(); if (current !== day) { day = current; refresh(); } };
+    this.registerInterval(window.setInterval(refreshDay, 60_000));
+    this.registerDomEvent(document, "visibilitychange", refreshDay);
     this.registerEvent(this.app.vault.on("create", refresh));
     this.registerEvent(this.app.vault.on("modify", refresh));
     this.registerEvent(this.app.vault.on("delete", refresh));
     this.registerEvent(this.app.vault.on("rename", refresh));
+    // Vault modify can precede the frontmatter cache update (including synced edits).
+    this.registerEvent(this.app.metadataCache.on("changed", (_file, _data, cache) => {
+      const fm = cache.frontmatter;
+      if (fm?.personalMapPlace === true || fm?.couponSchedulerItem === true || fm?.personalMapConfig === true) refresh();
+    }));
   }
 
   onunload(): void {

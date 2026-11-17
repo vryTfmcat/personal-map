@@ -1,3 +1,4 @@
+import { benefitAvailability } from "./benefits";
 import { App, normalizePath, TFile } from "obsidian";
 import {
   createPlaceId,
@@ -27,6 +28,7 @@ import {
 const DEFAULT_CONFIG: MapConfig = {
   placesFolder: DEFAULT_PLACES_FOLDER,
   centerPlace: "",
+  searchCity: "",
   initialRadiusMeters: 3000,
   searchRadiusMeters: 5000,
   panLimitMeters: 5000,
@@ -99,7 +101,16 @@ function serializePlaceNote(placeId: string, draft: PlaceDraft): string {
 }
 
 export class PersonalMapStore {
+  private configPath = DEFAULT_CONFIG_PATH;
+  private centerPath: string | null = null;
+
   constructor(private readonly app: App) {}
+
+  private resolveCenter(config: MapConfig): TFile | null {
+    const target = config.centerPlace.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
+    if (!target) return null;
+    return this.app.metadataCache.getFirstLinkpathDest(target, this.configPath);
+  }
 
   async ensureFolder(path: string): Promise<void> {
     const normalized = normalizePath(path);
@@ -113,12 +124,34 @@ export class PersonalMapStore {
   }
 
   async loadConfig(): Promise<MapConfig> {
-    const file = this.app.vault.getAbstractFileByPath(DEFAULT_CONFIG_PATH);
-    if (!(file instanceof TFile)) return { ...DEFAULT_CONFIG };
+    const defaultFile = this.app.vault.getAbstractFileByPath(DEFAULT_CONFIG_PATH);
+    const candidates = this.app.vault.getMarkdownFiles().filter((file) =>
+      this.app.metadataCache.getFileCache(file)?.frontmatter?.personalMapConfig === true,
+    );
+    const file = defaultFile instanceof TFile ? defaultFile : candidates.length === 1 ? candidates[0] : null;
+    if (!file) {
+      throw new Error(candidates.length > 1
+        ? "找到多份地图配置，请只保留一份 personalMapConfig: true 的配置，或将选定配置放到 " + DEFAULT_CONFIG_PATH
+        : "未找到地图配置，请创建带 personalMapConfig: true 的配置笔记，再重新打开地图");
+    }
+    this.configPath = file.path;
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    let placesFolder = normalizePath(frontmatterString(frontmatter.placesFolder, DEFAULT_CONFIG.placesFolder));
+    // A copied starter tree may be wrapped in a friend's project folder.
+    // Prefer a real vault-root folder; only infer the wrapper from the known starter path.
+    const prefix = file.path.endsWith(DEFAULT_CONFIG_PATH)
+      ? file.path.slice(0, -DEFAULT_CONFIG_PATH.length) : "";
+    if (prefix && !this.app.vault.getAbstractFileByPath(placesFolder)) {
+      const nested = normalizePath(prefix + placesFolder);
+      const nestedRoot = normalizePath(prefix + placesFolder.split("/")[0]);
+      if (this.app.vault.getAbstractFileByPath(nested) || this.app.vault.getAbstractFileByPath(nestedRoot)) {
+        placesFolder = nested;
+      }
+    }
     return {
-      placesFolder: frontmatterString(frontmatter.placesFolder, DEFAULT_CONFIG.placesFolder),
+      placesFolder,
       centerPlace: frontmatterString(frontmatter.centerPlace, DEFAULT_CONFIG.centerPlace),
+      searchCity: frontmatterString(frontmatter.searchCity),
       initialRadiusMeters: positiveNumber(frontmatter.initialRadiusMeters, DEFAULT_CONFIG.initialRadiusMeters),
       searchRadiusMeters: positiveNumber(frontmatter.searchRadiusMeters, DEFAULT_CONFIG.searchRadiusMeters),
       panLimitMeters: positiveNumber(frontmatter.panLimitMeters, DEFAULT_CONFIG.panLimitMeters),
@@ -131,6 +164,9 @@ export class PersonalMapStore {
     if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") return null;
     return {
       file,
+      benefitStatus: frontmatterString(frontmatter.benefitStatus),
+      validFrom: frontmatterString(frontmatter.validFrom),
+      validTo: frontmatterString(frontmatter.validTo),
       benefitId: frontmatterString(frontmatter.benefitId),
       title: frontmatterString(frontmatter.title, file.basename),
       merchantName: frontmatterString(frontmatter.merchantName),
@@ -158,7 +194,7 @@ export class PersonalMapStore {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
       if (frontmatter?.couponSchedulerItem !== true || frontmatter?.entityType !== "benefit") continue;
-      if (frontmatterString(frontmatter.benefitStatus) !== "active") continue;
+      if (!benefitAvailability({ benefitStatus: frontmatterString(frontmatter.benefitStatus), validFrom: frontmatterString(frontmatter.validFrom), validTo: frontmatterString(frontmatter.validTo) }).available) continue;
       const ids = normalizeStringList(frontmatter.usablePlaceIds);
       const refs = normalizeStringList(frontmatter.usableAt);
       const linkedById = Boolean(place.placeId && ids.includes(place.placeId));
@@ -189,11 +225,12 @@ export class PersonalMapStore {
     const files = this.app.vault.getMarkdownFiles().filter((file) =>
       file.path.startsWith(`${placesFolder}/`),
     );
-    const centerTarget = config.centerPlace.match(/^\[\[([^|\]]+)/)?.[1]?.trim();
-    if (centerTarget) {
-      const centerFile = this.app.metadataCache.getFirstLinkpathDest(centerTarget, DEFAULT_CONFIG_PATH);
-      if (centerFile && !files.some((file) => file.path === centerFile.path)) files.push(centerFile);
+    const centerFile = this.resolveCenter(config);
+    this.centerPath = centerFile?.path ?? null;
+    if (config.centerPlace && !centerFile) {
+      throw new Error("地图中心链接无法解析，请检查配置中的 centerPlace 和实际笔记路径");
     }
+    if (centerFile && !files.some((file) => file.path === centerFile.path)) files.push(centerFile);
     const records: PlaceRecord[] = [];
     for (const file of files) {
       const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -217,6 +254,7 @@ export class PersonalMapStore {
         markerIcon: frontmatterString(frontmatter.markerIcon, "lucide:map-pin"),
         markerColor: frontmatterString(frontmatter.markerColor, "#2563eb"),
         home: frontmatterBoolean(frontmatter.home),
+        dailyVisit: frontmatterBoolean(frontmatter.mapDailyVisit),
         privacy: frontmatterString(frontmatter.privacy, "private"),
         source: frontmatterString(frontmatter.source, "manual"),
         tags: normalizeTags(frontmatter.tags),
@@ -224,6 +262,9 @@ export class PersonalMapStore {
         created: frontmatterString(frontmatter.created),
         updated: frontmatterString(frontmatter.updated),
       });
+    }
+    if (centerFile && !records.some((place) => place.file.path === centerFile.path)) {
+      throw new Error("中心笔记缺少 personalMapPlace: true，请检查其属性");
     }
     return records.sort((left, right) => Number(right.home) - Number(left.home) || left.title.localeCompare(right.title, "zh-CN"));
   }
@@ -328,6 +369,12 @@ export class PersonalMapStore {
     });
   }
 
+  async setDailyVisit(place: PlaceRecord, enabled: boolean): Promise<void> {
+    await this.app.fileManager.processFrontMatter(place.file, frontmatter => {
+      frontmatter.mapDailyVisit = enabled;
+    });
+  }
+
   async deletePlace(place: PlaceRecord): Promise<void> {
     await this.app.vault.trash(place.file, true);
   }
@@ -337,6 +384,10 @@ export class PersonalMapStore {
   }
 
   findHome(places: PlaceRecord[]): PlaceRecord | null {
+    const configured = places.find((place) => place.file.path === this.centerPath);
+    // The explicit center link wins even if its old home checkbox was cleared.
+    // Do not rewrite the user's note merely to display it as the center.
+    if (configured) return { ...configured, home: true };
     return places.find((place) => place.home) ?? null;
   }
 
